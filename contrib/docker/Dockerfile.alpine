@@ -25,76 +25,56 @@
 # TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-FROM alpine:latest AS builder
-
-RUN apk add --no-cache \
-    git \
-    gcc \
-    cmake \
-    make \
-    postgresql-dev \
-    zlib \
-    zlib-dev \
-    zstd \
-    zstd-dev \
-    lz4 \
-    lz4-dev \
-    bzip2 \
-    bzip2-dev \
-    libpq \
-    libpq-dev \
-    musl-dev \
-    libev-dev \
-    py-docutils \
-    pandoc \
-    texlive texmf-dist \
-    doxygen graphviz \
-    libatomic \
-    yaml-dev
-WORKDIR /src
-
-COPY . .
-
-RUN rm -rf build && mkdir build
-
-RUN cd build && \
-    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ .. && \
-    make -j$(nproc) && \
-    make install
-
 FROM alpine:latest
 
+# Install all dependencies (build + runtime)
 RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
     echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
     apk update && \
     apk add --no-cache \
-    postgresql17 \
-    postgresql17-client \
-    bash \
-    ca-certificates \
-    libev \
-    yaml \
-    bzip2 \
-    bzip2-dev \
-    libpq \
-    libatomic \
-    zstd \
-    lz4-libs
+    # Build dependencies
+    git gcc cmake make \
+    postgresql-dev zlib-dev zstd-dev lz4-dev \
+    bzip2-dev libpq-dev musl-dev libev-dev \
+    py-docutils libatomic yaml-dev liburing-dev linux-headers \
+    # Runtime dependencies
+    postgresql17-client bash ca-certificates \
+    libev yaml bzip2 libpq libatomic zstd lz4-libs
 
+# Create pgagroal user
 RUN adduser -D -s /bin/sh pgagroal
 
-WORKDIR /pgagroal
+# Set working directory
+WORKDIR /src
 
-COPY --from=builder /usr/local/bin/pgagroal /usr/local/bin/pgagroal-cli /usr/local/bin/pgagroal-admin /usr/local/bin/
-COPY --from=builder /usr/local/lib/libpgagroal.so* /usr/local/lib/
+# Copy source code
+COPY --chown=pgagroal:pgagroal . .
 
-COPY contrib/docker/pgagroal.conf contrib/docker/pgagroal_hba.conf /etc/pgagroal/
+# Build and install pgagroal
+RUN rm -rf CMakeCache.txt CMakeFiles build && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ .. && \
+    make -j$(nproc) && \
+    make install
 
-RUN chown -R pgagroal:pgagroal /pgagroal /etc/pgagroal
-RUN chmod +x /usr/local/bin/pgagroal /usr/local/bin/pgagroal-cli /usr/local/bin/pgagroal-admin
+# Create configuration directory and copy configs
+RUN mkdir -p /etc/pgagroal && \
+    chown -R pgagroal:pgagroal /etc/pgagroal
 
+# Copy configuration files
+COPY --chown=pgagroal:pgagroal contrib/docker/pgagroal.conf contrib/docker/pgagroal_hba.conf /etc/pgagroal/
+
+# Clean up build dependencies to reduce image size (optional)
+RUN apk del git gcc cmake make postgresql-dev zlib-dev zstd-dev \
+    lz4-dev bzip2-dev libpq-dev musl-dev libev-dev py-docutils \
+    yaml-dev liburing-dev linux-headers
+
+# Expose ports
 EXPOSE 2345 2346
 
+# Switch to pgagroal user
 USER pgagroal
 
+# Start pgagroal
 CMD ["/usr/local/bin/pgagroal", "-c", "/etc/pgagroal/pgagroal.conf", "-a", "/etc/pgagroal/pgagroal_hba.conf"]
