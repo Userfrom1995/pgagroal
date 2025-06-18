@@ -27,19 +27,23 @@
 
 FROM alpine:latest
 
-# Install all dependencies (build + runtime)
+# Install only essential dependencies
 RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
     echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories && \
     apk update && \
     apk add --no-cache \
     # Build dependencies
     git gcc cmake make \
-    postgresql-dev zlib-dev zstd-dev lz4-dev \
-    bzip2-dev libpq-dev musl-dev libev-dev \
-    py-docutils libatomic yaml-dev liburing-dev linux-headers \
-    # Runtime dependencies
-    postgresql17-client bash ca-certificates \
-    libev yaml bzip2 libpq libatomic zstd lz4-libs
+    libpq-dev musl-dev libev-dev \
+    zlib-dev zstd-dev lz4-dev bzip2-dev \
+    yaml-dev libatomic linux-headers \
+    py3-docutils \
+    pandoc \
+    texlive texmf-dist \
+    doxygen graphviz \
+    # Runtime dependencies  
+    libpq libev yaml bzip2 libatomic zstd lz4-libs \
+    bash ca-certificates liburing-dev 
 
 # Create pgagroal user
 RUN adduser -D -s /bin/sh pgagroal
@@ -54,7 +58,9 @@ COPY --chown=pgagroal:pgagroal . .
 RUN rm -rf CMakeCache.txt CMakeFiles build && \
     mkdir build && \
     cd build && \
-    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ .. && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ \
+        -DBUILD_DOCS=OFF \
+        -DBUILD_MAN=OFF .. && \
     make -j$(nproc) && \
     make install
 
@@ -62,13 +68,12 @@ RUN rm -rf CMakeCache.txt CMakeFiles build && \
 RUN mkdir -p /etc/pgagroal && \
     chown -R pgagroal:pgagroal /etc/pgagroal
 
-# Copy configuration files
+# Copy configuration files  
 COPY --chown=pgagroal:pgagroal contrib/docker/pgagroal.conf contrib/docker/pgagroal_hba.conf /etc/pgagroal/
 
-# Clean up build dependencies to reduce image size (optional)
-RUN apk del git gcc cmake make postgresql-dev zlib-dev zstd-dev \
-    lz4-dev bzip2-dev libpq-dev musl-dev libev-dev py-docutils \
-    yaml-dev liburing-dev linux-headers
+# Clean up build dependencies to reduce image size
+RUN apk del git gcc cmake make libpq-dev musl-dev libev-dev \
+    zlib-dev zstd-dev lz4-dev bzip2-dev yaml-dev linux-headers
 
 # Expose ports
 EXPOSE 2345 2346
