@@ -43,11 +43,10 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositori
     doxygen graphviz \
     # Runtime dependencies  
     libpq libev yaml bzip2 libatomic zstd lz4-libs \
-    postgresql17 \
     postgresql17-client \
     bash \
     ca-certificates \
-    bash ca-certificates liburing-dev 
+    liburing-dev 
 
 # Create pgagroal user
 RUN adduser -D -s /bin/sh pgagroal

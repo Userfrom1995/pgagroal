@@ -24,81 +24,70 @@
 # TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-FROM rockylinux:9 AS builder
+FROM rockylinux:9
 
+# Install EPEL and enable repositories
 RUN rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
     dnf -y upgrade && \
     dnf install -y dnf-plugins-core && \
     dnf config-manager --set-enabled crb && \
-    dnf makecache && \
-    dnf install -y \
-        git \
-        gcc \
-        cmake \
-        make \
-        postgresql-devel \
-        zlib \
-        zlib-devel \
-        zstd \
-        libzstd-devel \
-        lz4 \
-        lz4-devel \
-        bzip2 \
-        bzip2-devel \
-        libpq \
-        libpq-devel \
-        libev-devel \
-        python3-docutils \
-        pandoc \
-        texlive \
-        doxygen \
-        graphviz \
-        openssl-devel \
-        libatomic \
-        libyaml-devel \
-        systemd-devel \
-        libasan \ 
-        libasan-static \
-        yaml-cpp-devel && \
+    dnf makecache
+
+# Install dependencies
+RUN dnf -y update && \
+    dnf -y install --allowerasing \
+      git gcc clang cmake make \
+      libev libev-devel openssl-devel systemd-devel \
+      zlib zlib-devel libzstd-devel lz4-devel postgresql17-client \
+      libssh-devel libcurl-devel libatomic \
+      python3-docutils bzip2-devel libarchive-devel \
+      net-tools check check-devel graphviz \
+      doxygen pandoc texlive texlive-latex \
+      python3-pip curl ca-certificates wget \
+      libasan libubsan libstdc++-devel liburing-devel libgcc glibc-devel \
+      gawk coreutils findutils iproute && \
     dnf clean all
 
-WORKDIR /src
-
-COPY . .
-
-RUN rm -rf build && mkdir build
-
-RUN cd build && \
-    cmake .. -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_RPATH=/usr/local/lib && \
-    make install
-
-FROM rockylinux:9
-
-RUN dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm && \
-    dnf -y update && \
-    dnf install -y postgresql17-server \
-        postgresql17-contrib \
-        libpq5 \
-        libev \
-        libatomic && \
-    dnf clean all
-
+# Create pgagroal user
 RUN useradd --create-home --shell /bin/bash pgagroal
 
-WORKDIR /pgagroal
+# Set working directory
+WORKDIR /src
 
-COPY --from=builder /usr/local/bin/pgagroal /usr/local/bin/pgagroal-cli /usr/local/bin/pgagroal-admin /usr/local/bin/
-COPY --from=builder /usr/local/lib/libpgagroal.so* /usr/local/lib/
+# Copy source code
+COPY --chown=pgagroal:pgagroal . .
 
-COPY contrib/docker/pgagroal.conf contrib/docker/pgagroal_hba.conf /etc/pgagroal/
+# Build and install pgagroal
+RUN rm -rf CMakeCache.txt CMakeFiles build && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_INSTALL_RPATH=/usr/local/lib \
+        -DBUILD_DOCS=OFF \
+        -DBUILD_MAN=OFF .. && \
+    make -j$(nproc) && \
+    make install
 
+# Create configuration directory and copy configs
+RUN mkdir -p /etc/pgagroal && \
+    chown -R pgagroal:pgagroal /etc/pgagroal
 
-RUN chown -R pgagroal:pgagroal /pgagroal /etc/pgagroal
-RUN chmod +x /usr/local/bin/pgagroal /usr/local/bin/pgagroal-cli /usr/local/bin/pgagroal-admin
+# Copy configuration files
+COPY --chown=pgagroal:pgagroal contrib/docker/pgagroal.conf contrib/docker/pgagroal_hba.conf /etc/pgagroal/
 
+# Clean up build dependencies to reduce image size
+RUN dnf remove -y git gcc cmake make postgresql-devel libpq-devel \
+    zlib-devel libzstd-devel lz4-devel bzip2-devel libyaml-devel \
+    systemd-devel openssl-devel python3-docutils pandoc texlive \
+    doxygen graphviz && \
+    dnf clean all
+
+# Expose ports
 EXPOSE 2345 2346
 
+# Switch to pgagroal user
 USER pgagroal
 
-
+# Start pgagroal
 CMD ["/usr/local/bin/pgagroal", "-c", "/etc/pgagroal/pgagroal.conf", "-a", "/etc/pgagroal/pgagroal_hba.conf"]
