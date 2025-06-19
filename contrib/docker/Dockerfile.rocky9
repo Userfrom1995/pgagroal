@@ -38,7 +38,7 @@ RUN dnf -y update && \
     dnf -y install --allowerasing \
       git gcc clang cmake make \
       libev libev-devel openssl-devel systemd-devel \
-      zlib zlib-devel libzstd-devel lz4-devel postgresql17-client \
+      zlib zlib-devel libzstd-devel lz4-devel  \
       libssh-devel libcurl-devel libatomic \
       python3-docutils bzip2-devel libarchive-devel \
       net-tools check check-devel graphviz \
