@@ -26,19 +26,17 @@
 
 FROM rockylinux:9
 
-# Install EPEL and enable repositories
-RUN rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
-    dnf -y upgrade && \
-    dnf install -y dnf-plugins-core && \
-    dnf config-manager --set-enabled crb && \
-    dnf makecache
+# Enable EPEL & CRB repositories
+RUN dnf -y update && \
+    dnf -y install --allowerasing epel-release dnf-plugins-core && \
+    dnf config-manager --set-enabled epel crb && \
+    dnf clean all
 
-# Install dependencies
 RUN dnf -y update && \
     dnf -y install --allowerasing \
       git gcc clang cmake make \
       libev libev-devel openssl-devel systemd-devel \
-      zlib zlib-devel libzstd-devel lz4-devel  \
+      zlib zlib-devel libzstd-devel lz4-devel \
       libssh-devel libcurl-devel libatomic \
       python3-docutils bzip2-devel libarchive-devel \
       net-tools check check-devel graphviz \
