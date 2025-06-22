@@ -142,6 +142,11 @@ pgagroal_management_config_alias(SSL* ssl, int socket, uint8_t compression, uint
 {
    struct json* response = NULL;
    struct main_configuration* config;
+   struct json* output = NULL;
+   struct json* aliases_array = NULL;
+   struct json* entry = NULL;
+   struct json* alias_list = NULL;
+   struct json* alias_item = NULL;
 
    config = (struct main_configuration*)shmem;
 
@@ -152,14 +157,12 @@ pgagroal_management_config_alias(SSL* ssl, int socket, uint8_t compression, uint
    }
 
    // Create the main output structure
-   struct json* output = NULL;
    if (pgagroal_json_create(&output))
    {
       goto error;
    }
 
    // Create aliases array
-   struct json* aliases_array = NULL;
    if (pgagroal_json_create(&aliases_array))
    {
       goto error;
@@ -167,7 +170,7 @@ pgagroal_management_config_alias(SSL* ssl, int socket, uint8_t compression, uint
 
    for (int i = 0; i < config->number_of_limits; i++)
    {
-      struct json* entry = NULL;
+      entry = NULL;
       if (pgagroal_json_create(&entry))
       {
          goto error;
@@ -182,7 +185,7 @@ pgagroal_management_config_alias(SSL* ssl, int socket, uint8_t compression, uint
 
       if (config->limits[i].aliases_count > 0)
       {
-         struct json* alias_list = NULL;
+         alias_list = NULL;
          if (pgagroal_json_create(&alias_list))
          {
             goto error;
@@ -190,7 +193,7 @@ pgagroal_management_config_alias(SSL* ssl, int socket, uint8_t compression, uint
 
          for (int j = 0; j < config->limits[i].aliases_count; j++)
          {
-            struct json* alias_item = NULL;
+            alias_item = NULL;
             if (pgagroal_json_create(&alias_item))
             {
                goto error;
@@ -242,7 +245,6 @@ error:
    exit(1);
 }
 
-// Add this function around line 580:
 int
 pgagroal_management_request_conf_alias(SSL* ssl, int socket, uint8_t compression, uint8_t encryption, int32_t output_format)
 {

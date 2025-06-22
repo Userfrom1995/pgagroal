@@ -2818,8 +2818,9 @@ extract_limit(char* str, int server_max, char** database, char** user, int* max_
          char* alias_copy = strdup(alias_start);
          if (alias_copy)
          {
+            int total_aliases_found = 0;
             char* token = strtok(alias_copy, ",");
-            while (token && *aliases_count < MAX_ALIASES)
+            while (token)
             {
                // Trim whitespace
                while (*token == ' ' || *token == '\t')
@@ -2833,24 +2834,34 @@ extract_limit(char* str, int server_max, char** database, char** user, int* max_
 
                if (strlen(token) > 0)
                {
+                  total_aliases_found++; // ← Count every valid alias found
                   //Ensure alias length doesn't exceed MAX_DATABASE_LENGTH - 1
-                  if (strlen(token) >= MAX_DATABASE_LENGTH)
+                  if (*aliases_count < MAX_ALIASES)
                   {
-                     pgagroal_log_fatal("Alias '%s' too long (max %d characters) in configuration: '%s'",
-                                        token, MAX_DATABASE_LENGTH - 1, str);
-                     pgagroal_log_fatal("Server configuration is invalid. Exiting.");
-                     free(db_part);
-                     free(alias_copy);
-                     exit(1);
-                  }
+                     if (strlen(token) >= MAX_DATABASE_LENGTH)
+                     {
+                        pgagroal_log_fatal("Alias '%s' too long (max %d characters) in configuration: '%s'",
+                                           token, MAX_DATABASE_LENGTH - 1, str);
+                        pgagroal_log_fatal("Server configuration is invalid. Exiting.");
+                        free(db_part);
+                        free(alias_copy);
+                        exit(1);
+                     }
 
-                  // Safe copy with explicit null termination
-                  memset(aliases[*aliases_count], 0, MAX_DATABASE_LENGTH);
-                  memcpy(aliases[*aliases_count], token, strlen(token));
-                  (*aliases_count)++;
+                     // Safe copy with explicit null termination
+                     memset(aliases[*aliases_count], 0, MAX_DATABASE_LENGTH);
+                     memcpy(aliases[*aliases_count], token, strlen(token));
+                     (*aliases_count)++;
+                  }
                }
 
                token = strtok(NULL, ",");
+            }
+            // Warning if more aliases were found than we can store
+            if (total_aliases_found > MAX_ALIASES)
+            {
+               pgagroal_log_warn("Database '%s' has %d aliases, but only the first %d will be used (max limit: %d)",
+                                 *database, total_aliases_found, MAX_ALIASES, MAX_ALIASES);
             }
 
             free(alias_copy);

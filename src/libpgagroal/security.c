@@ -527,6 +527,7 @@ pgagroal_prefill_auth(char* username, char* password, char* database, int* slot,
    struct message* msg = NULL;
    int ret = -1;
    int status = -1;
+   char* real_database = NULL;
 
    config = (struct main_configuration*)shmem;
 
@@ -541,7 +542,7 @@ pgagroal_prefill_auth(char* username, char* password, char* database, int* slot,
       goto error;
    }
    server_fd = config->connections[*slot].fd;
-   char* real_database = resolve_database_alias(username, database);
+   real_database = resolve_database_alias(username, database);
 
    status = pgagroal_create_startup_message(username, real_database, &startup_msg);
    if (status != MESSAGE_STATUS_OK)
@@ -2977,7 +2978,7 @@ is_allowed_database(char* database, char* entry)
       return true;
    }
 
-   // NEW: Check if the database is an alias in any limit entry
+   // Check if the database is an alias in any limit entry
    for (int i = 0; i < config->number_of_limits; i++)
    {
       if (!strcmp(entry, config->limits[i].database))
