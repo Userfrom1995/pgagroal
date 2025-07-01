@@ -462,6 +462,52 @@ EOF
         chown -R postgres:postgres $PGAGROAL_LOG_FILE
     fi
     echo ""
+
+   echo -e "\e[34mCreate Database Alias Configuration \e[0m"
+    
+    cat << EOF > $CONFIGURATION_DIRECTORY/pgagroal_databases.conf
+#
+# DATABASE=ALIAS1,ALIAS2 USER MAX_SIZE INITIAL_SIZE MIN_SIZE
+#
+postgres=pgalias1,pgalias2 $PSQL_USER 8 0 0
+EOF
+
+    echo "create pgagroal_databases.conf inside $CONFIGURATION_DIRECTORY ... ok"
+    echo ""
+
+    echo -e "\e[34mCreate Master Key \e[0m"
+    
+    echo "=== DEBUG: Creating master key ==="
+    run_as_postgres "$EXECUTABLE_DIRECTORY/pgagroal-admin master-key -P $PGPASSWORD"
+    master_key_result=$?
+    echo "Master key creation result: $master_key_result"
+    
+    if [ $master_key_result -ne 0 ]; then
+        echo "Failed to create master key"
+        exit 1
+    fi
+    
+    echo "create master key ... ok"
+    echo ""
+
+    echo -e "\e[34mCreate Users Configuration \e[0m"
+    
+    echo "=== DEBUG: Adding $PSQL_USER to pgagroal_users.conf ==="
+    run_as_postgres "$EXECUTABLE_DIRECTORY/pgagroal-admin -f $CONFIGURATION_DIRECTORY/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add"
+    user_add_result=$?
+    echo "User add result for $PSQL_USER: $user_add_result"
+    
+    if [ $user_add_result -ne 0 ]; then
+        echo "Failed to add user $PSQL_USER"
+        exit 1
+    fi
+    
+    
+    echo "create pgagroal_users.conf inside $CONFIGURATION_DIRECTORY ... ok"
+    echo ""
+
+
+
 }
 
 execute_testcases() {
@@ -485,7 +531,7 @@ execute_testcases() {
         exit 1
     fi
 
-    run_as_postgres "$EXECUTABLE_DIRECTORY/pgagroal -c $CONFIGURATION_DIRECTORY/pgagroal.conf -a $CONFIGURATION_DIRECTORY/pgagroal_hba.conf -d"
+    run_as_postgres "$EXECUTABLE_DIRECTORY/pgagroal -c $CONFIGURATION_DIRECTORY/pgagroal.conf -a $CONFIGURATION_DIRECTORY/pgagroal_hba.conf -u $CONFIGURATION_DIRECTORY/pgagroal_users.conf -l $CONFIGURATION_DIRECTORY/pgagroal_databases.conf -d"
     wait_for_server_ready $PGAGROAL_PORT
     if [ $? -eq 0 ]; then
         echo "pgagroal server started in daemon mode ... ok"
