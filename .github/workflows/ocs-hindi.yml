@@ -19,8 +19,8 @@ jobs:
 
       - name: Pull and run LibreTranslate Docker container
         run: |
-          docker pull libretranslate/libretranslate
-          docker run -d -p 5000:5000 --name libretranslate libretranslate/libretranslate
+          pip install libretranslate
+          libretranslate
 
       - name: test LibreTranslate Docker container
         run: |
