@@ -1,0 +1,106 @@
+name: Build Hindi Documentation PDFs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-hindi-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Pull and run LibreTranslate Docker container
+        run: |
+          docker pull libretranslate/libretranslate
+          docker run -d -p 5000:5000 --name libretranslate libretranslate/libretranslate
+          # Wait for the server to be ready
+          for i in {1..60}; do
+            if curl -s http://localhost:5000/health | grep -q healthy; then
+              echo "LibreTranslate is ready"
+              break
+            fi
+            echo "Waiting for LibreTranslate to be ready..."
+            sleep 5
+          done
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl pandoc texlive-latex-base texlive-fonts-recommended texlive-fonts-extra texlive-latex-extra wget unzip
+
+      - name: Download Eisvogel template
+        run: |
+          wget https://github.com/Wandmalfarbe/pandoc-latex-template/releases/download/v3.2.0/Eisvogel-3.2.0.tar.gz
+          tar -xzf Eisvogel-3.2.0.tar.gz
+          mkdir -p ~/.local/share/pandoc/templates
+          cp Eisvogel-3.2.0/eisvogel.latex ~/.local/share/pandoc/templates/
+
+      - name: Translate Markdown files to Hindi
+        run: |
+          #!/bin/bash
+          set -e
+          TRANSLATE_URL="http://localhost:5000/translate"
+          SRC_DIR="doc"
+          DST_DIR="document_hindi"
+          TIMEOUT=60
+
+          echo "Current working directory: $(pwd)"
+
+          # Copy the entire doc directory to document_hindi
+          if [ -d "$DST_DIR" ]; then
+            echo "Removing existing $DST_DIR directory..."
+            rm -rf "$DST_DIR"
+          fi
+
+          echo "Copying $SRC_DIR to $DST_DIR..."
+          cp -r "$SRC_DIR" "$DST_DIR"
+
+          find "$DST_DIR" -type f -name "*.md" | while read -r file; do
+            echo "Translating: $file"
+            content=$(cat "$file")
+            # Escape content for JSON
+            json=$(jq -n --arg q "$content" --arg source "en" --arg target "hi" '{q: $q, source: $source, target: $target}')
+            response=$(timeout $TIMEOUT curl -s -X POST -H "Content-Type: application/json" -d "$json" "$TRANSLATE_URL" || echo "__TIMEOUT__")
+            if [ "$response" = "__TIMEOUT__" ]; then
+              echo "ERROR: Timeout translating $file"
+              continue
+            fi
+            # Try to extract translated text
+            translated=$(echo "$response" | jq -r '.translatedText // empty')
+            if [ -z "$translated" ]; then
+              echo "ERROR: Translation failed for $file"
+              continue
+            fi
+            echo "$translated" > "$file"
+            echo "Saved translated file: $file"
+          done
+
+          echo "Translation complete. All translated files are in $DST_DIR"
+
+      - name: Build Hindi User Guide PDF
+        run: |
+          mkdir -p build
+          pandoc -o build/pgagroal-user-guide-hi.pdf --from markdown --template eisvogel --listings -N --toc \
+            document_hindi/manual/user-00-head.md \
+            document_hindi/manual/user-01-*.md \
+            document_hindi/manual/user-10-*.md
+
+      - name: Build Hindi Developer Guide PDF
+        run: |
+          pandoc -o build/pgagroal-dev-guide-hi.pdf --from markdown --template eisvogel --listings -N --toc \
+            document_hindi/manual/dev-??-*.md
+
+      - name: Build Hindi Advanced Guide PDF
+        run: |
+          pandoc -o build/pgagroal-advanced-hi.pdf --from markdown --template eisvogel --listings -N --toc \
+            document_hindi/manual/advanced/??-*.md
+
+      - name: Upload Hindi PDFs as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hindi-docs
+          path: build/pgagroal-*-hi.pdf
