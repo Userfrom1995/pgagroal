@@ -21,15 +21,6 @@ jobs:
         run: |
           docker pull libretranslate/libretranslate
           docker run -d -p 5000:5000 --name libretranslate libretranslate/libretranslate
-          # Wait for the server to be ready
-          for i in {1..60}; do
-            if curl -s http://localhost:5000/health | grep -q healthy; then
-              echo "LibreTranslate is ready"
-              break
-            fi
-            echo "Waiting for LibreTranslate to be ready..."
-            sleep 5
-          done
 
       - name: Install dependencies
         run: |
