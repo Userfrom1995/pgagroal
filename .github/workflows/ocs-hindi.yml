@@ -17,10 +17,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Pull and run LibreTranslate Docker container
+      - name: Install and start LibreTranslate in background
         run: |
           pip install libretranslate
-          libretranslate
+          nohup libretranslate > libretranslate.log 2>&1 &
+          # Wait up to 10 minutes for LibreTranslate to be ready
+          for i in {1..120}; do
+            if curl -s -X POST http://localhost:5000/translate -d q="Hello" -d source=en -d target=es | grep -q '"translatedText"'; then
+              echo "LibreTranslate is ready"
+              break
+            fi
+            echo "Waiting for LibreTranslate to be ready... ($i/120)"
+            sleep 5
+          done
 
       - name: test LibreTranslate Docker container
         run: |
