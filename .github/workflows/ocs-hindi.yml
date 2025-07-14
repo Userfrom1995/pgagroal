@@ -1,9 +1,13 @@
 name: Build Hindi Documentation PDFs
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - translate2
+  pull_request:
+    branches:
+      - translate2
+  workflow_dispatch:
 
 jobs:
   build-hindi-docs:
