@@ -512,34 +512,117 @@ validate_json_structure() {
 #     return 0
 # }
 
+# validate_command_success() {
+#     local json_output="$1"
+#     local expected_success="$2"  # true/false
+#     local test_name="$3"
+    
+#     # Get the actual status (boolean)
+#     local outcome_status=$(echo "$json_output" | jq -r '.Outcome.Status')
+    
+#     # Debug output to see what we're getting
+#     log_debug "$test_name: outcome_status='$outcome_status', expected_success='$expected_success'"
+    
+#     if [[ "$expected_success" == "true" ]]; then
+#         # We expect success, so Status should be true
+#         if [[ "$outcome_status" != "true" ]]; then
+#             log_error "$test_name: Expected success but got Status=$outcome_status"
+#             return 1
+#         fi
+#     else
+#         # We expect failure, so Status should be false
+#         if [[ "$outcome_status" == "true" ]]; then
+#             log_error "$test_name: Expected failure but got success (Status=$outcome_status)"
+#             return 1
+#         fi
+#         # If Status is false, null, or anything other than true, that's a failure (which we expected)
+#     fi
+    
+#     return 0
+# }
+
 validate_command_success() {
     local json_output="$1"
     local expected_success="$2"  # true/false
     local test_name="$3"
     
-    # Get the actual status (boolean)
-    local outcome_status=$(echo "$json_output" | jq -r '.Outcome.Status')
+    # Function to recursively search for "Status" in the entire JSON
+    find_status_in_json() {
+        local json="$1"
+        
+        # Try to find Status at any level using jq's recursive descent
+        # This will find "Status" anywhere in the JSON structure
+        local status_values=$(echo "$json" | jq -r '.. | objects | select(has("Status")) | .Status' 2>/dev/null)
+        
+        # If we found any Status values, return the first one
+        if [[ -n "$status_values" ]]; then
+            echo "$status_values" | head -n1
+            return 0
+        fi
+        
+        # Fallback: try common legacy formats
+        local legacy_status=$(echo "$json" | jq -r '.command.status // empty' 2>/dev/null)
+        if [[ -n "$legacy_status" && "$legacy_status" != "null" ]]; then
+            # Convert legacy status to boolean-like
+            if [[ "$legacy_status" == "OK" ]]; then
+                echo "true"
+            else
+                echo "false"
+            fi
+            return 0
+        fi
+        
+        # Check for error field as another indicator
+        local error_field=$(echo "$json" | jq -r '.command.error // .Outcome.Error // empty' 2>/dev/null)
+        if [[ -n "$error_field" && "$error_field" != "null" ]]; then
+            # If error is 0 or false, it's success; otherwise failure
+            if [[ "$error_field" == "0" || "$error_field" == "false" ]]; then
+                echo "true"
+            else
+                echo "false"
+            fi
+            return 0
+        fi
+        
+        # No status found anywhere
+        return 1
+    }
     
-    # Debug output to see what we're getting
-    log_debug "$test_name: outcome_status='$outcome_status', expected_success='$expected_success'"
+    # Find the status value anywhere in the JSON
+    local actual_status
+    actual_status=$(find_status_in_json "$json_output")
+    local find_result=$?
     
+    # Debug output
+    log_debug "$test_name: Found status='$actual_status', expected_success='$expected_success'"
+    
+    # If we couldn't find any status indicator, treat as failure
+    if [[ $find_result -ne 0 ]]; then
+        log_error "$test_name: No status indicator found in JSON response"
+        return 1
+    fi
+    
+    # Now compare the found status with expected result
     if [[ "$expected_success" == "true" ]]; then
-        # We expect success, so Status should be true
-        if [[ "$outcome_status" != "true" ]]; then
-            log_error "$test_name: Expected success but got Status=$outcome_status"
+        # We expect success
+        if [[ "$actual_status" == "true" ]]; then
+            return 0  # Success as expected
+        else
+            log_error "$test_name: Expected success but got Status='$actual_status'"
             return 1
         fi
     else
-        # We expect failure, so Status should be false
-        if [[ "$outcome_status" == "true" ]]; then
-            log_error "$test_name: Expected failure but got success (Status=$outcome_status)"
+        # We expect failure
+        if [[ "$actual_status" == "true" ]]; then
+            log_error "$test_name: Expected failure but got success (Status='$actual_status')"
             return 1
+        else
+            return 0  # Failure as expected
         fi
-        # If Status is false, null, or anything other than true, that's a failure (which we expected)
     fi
-    
-    return 0
 }
+
+
 
 
 
