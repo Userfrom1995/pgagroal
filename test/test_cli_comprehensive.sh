@@ -604,7 +604,7 @@ validate_command_success() {
     local find_result=$?
     
     # Debug output
-    log_debug "$test_name: Found status='$actual_status', expected_success='$expected_success'"
+    log_info "$test_name: Found status='$actual_status', expected_success='$expected_success'"
     
     # If we couldn't find any status indicator, treat as failure
     if [[ $find_result -ne 0 ]]; then
