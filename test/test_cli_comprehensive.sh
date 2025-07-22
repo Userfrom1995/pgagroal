@@ -439,9 +439,13 @@ validate_json_structure() {
     local command_name=$(echo "$json_output" | jq -r '.Header.Command // "null"')
     local outcome_status=$(echo "$json_output" | jq -r '.Outcome.Status // "null"')
     
-    if [[ "$command_name" == "null" ]] || [[ "$outcome_status" == "null" ]]; then
-        log_error "$test_name: Missing required JSON fields (Header.Command or Outcome.Status)"
-        return 1
+    if [[ "$command_name" == "null" || -z "$command_name" ]]; then
+    log_error "$test_name: Missing Header.Command"
+    return 1
+    fi
+    if [[ "$outcome_status" == "null" || -z "$outcome_status" ]]; then
+    log_error "$test_name: Missing Outcome.Status"
+    return 1
     fi
     
     return 0
