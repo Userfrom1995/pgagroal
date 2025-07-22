@@ -627,68 +627,68 @@ validate_command_success() {
 
 
 
-# execute_cli_test() {
-#     local test_name="$1"
-#     local cli_command="$2"
-#     local expected_success="$3"  # true/false
-#     local connection_type="$4"   # local/remote
+execute_cli_test() {
+    local test_name="$1"
+    local cli_command="$2"
+    local expected_success="$3"  # true/false
+    local connection_type="$4"   # local/remote
     
-#     log_info "Testing: $test_name ($connection_type)"
+    log_info "Testing: $test_name ($connection_type)"
     
-#     local full_command
-#     local output
-#     local exit_code
+    local full_command
+    local output
+    local exit_code
     
-#     # Build command based on connection type
-#     if [[ "$connection_type" == "local" ]]; then
-#         full_command="$EXECUTABLE_DIR/pgagroal-cli -c $CONFIG_DIR/pgagroal.conf $cli_command --format json"
-#     else
-#         full_command="$EXECUTABLE_DIR/pgagroal-cli -h localhost -p $MANAGEMENT_PORT -U $ADMIN_USER -P $ADMIN_PASSWORD $cli_command --format json"
-#     fi
+    # Build command based on connection type
+    if [[ "$connection_type" == "local" ]]; then
+        full_command="$EXECUTABLE_DIR/pgagroal-cli -c $CONFIG_DIR/pgagroal.conf $cli_command --format json"
+    else
+        full_command="$EXECUTABLE_DIR/pgagroal-cli -h localhost -p $MANAGEMENT_PORT -U $ADMIN_USER -P $ADMIN_PASSWORD $cli_command --format json"
+    fi
     
-#     # Execute command with timeout
-#     if output=$(timeout $TEST_TIMEOUT bash -c "$full_command" 2>&1); then
-#         exit_code=0
-#     else
-#         exit_code=$?
-#     fi
+    # Execute command with timeout
+    if output=$(timeout $TEST_TIMEOUT bash -c "$full_command" 2>&1); then
+        exit_code=0
+    else
+        exit_code=$?
+    fi
     
-#     # Validate exit code
-#     if [[ "$expected_success" == "true" ]] && [[ $exit_code -ne 0 ]]; then
-#         log_error "$test_name ($connection_type): Expected success but got exit code $exit_code"
-#         echo "Output: $output"
-#         FAILED_TESTS+=("$test_name ($connection_type)")
-#         ((TESTS_FAILED++))
-#         return 1
-#     elif [[ "$expected_success" == "false" ]] && [[ $exit_code -eq 0 ]]; then
-#         log_error "$test_name ($connection_type): Expected failure but got success"
-#         echo "Output: $output"
-#         FAILED_TESTS+=("$test_name ($connection_type)")
-#         ((TESTS_FAILED++))
-#         return 1
-#     fi
+    # Validate exit code
+    if [[ "$expected_success" == "true" ]] && [[ $exit_code -ne 0 ]]; then
+        log_error "$test_name ($connection_type): Expected success but got exit code $exit_code"
+        echo "Output: $output"
+        FAILED_TESTS+=("$test_name ($connection_type)")
+        ((TESTS_FAILED++))
+        return 1
+    elif [[ "$expected_success" == "false" ]] && [[ $exit_code -eq 0 ]]; then
+        log_error "$test_name ($connection_type): Expected failure but got success"
+        echo "Output: $output"
+        FAILED_TESTS+=("$test_name ($connection_type)")
+        ((TESTS_FAILED++))
+        return 1
+    fi
     
-#     # Validate JSON structure if command succeeded
-#     if [[ $exit_code -eq 0 ]]; then
-#         if ! validate_json_structure "$output" "$test_name ($connection_type)"; then
-#             echo "Output: $output"
-#             FAILED_TESTS+=("$test_name ($connection_type)")
-#             ((TESTS_FAILED++))
-#             return 1
-#         fi
+    # Validate JSON structure if command succeeded
+    if [[ $exit_code -eq 0 ]]; then
+        if ! validate_json_structure "$output" "$test_name ($connection_type)"; then
+            echo "Output: $output"
+            FAILED_TESTS+=("$test_name ($connection_type)")
+            ((TESTS_FAILED++))
+            return 1
+        fi
         
-#         if ! validate_command_success "$output" "$expected_success" "$test_name ($connection_type)"; then
-#             echo "Output: $output"
-#             FAILED_TESTS+=("$test_name ($connection_type)")
-#             ((TESTS_FAILED++))
-#             return 1
-#         fi
-#     fi
+        if ! validate_command_success "$output" "$expected_success" "$test_name ($connection_type)"; then
+            echo "Output: $output"
+            FAILED_TESTS+=("$test_name ($connection_type)")
+            ((TESTS_FAILED++))
+            return 1
+        fi
+    fi
     
-#     log_success "$test_name ($connection_type): PASSED"
-#     ((TESTS_PASSED++))
-#     return 0
-# }
+    log_success "$test_name ($connection_type): PASSED"
+    ((TESTS_PASSED++))
+    return 0
+}
 
 # execute_cli_test() {
 #     local test_name="$1"
@@ -744,61 +744,61 @@ validate_command_success() {
 #     fi
 # }
 
-execute_cli_test() {
-    local test_name="$1"
-    local cli_command="$2"
-    local expected_success="$3"  # true/false
-    local connection_type="$4"   # local/remote
+# execute_cli_test() {
+#     local test_name="$1"
+#     local cli_command="$2"
+#     local expected_success="$3"  # true/false
+#     local connection_type="$4"   # local/remote
     
-    log_info "Testing: $test_name ($connection_type)"
+#     log_info "Testing: $test_name ($connection_type)"
     
-    local full_command
-    local output
-    local exit_code
+#     local full_command
+#     local output
+#     local exit_code
     
-    # Build command based on connection type
-    if [[ "$connection_type" == "local" ]]; then
-        full_command="pgagroal-cli $cli_command --format json"
-    else
-        full_command="pgagroal-cli $cli_command --format json -h localhost -p 2345"
-    fi
+#     # Build command based on connection type
+#     if [[ "$connection_type" == "local" ]]; then
+#         full_command="pgagroal-cli $cli_command --format json"
+#     else
+#         full_command="pgagroal-cli $cli_command --format json -h localhost -p 2345"
+#     fi
     
-    # Execute command and capture output
-    output=$(eval "$full_command" 2>&1)
-    exit_code=$?
+#     # Execute command and capture output
+#     output=$(eval "$full_command" 2>&1)
+#     exit_code=$?
     
-    # Determine success/failure ONLY from JSON content, ignore exit code
-    local actual_success="false"  # Default to failure
+#     # Determine success/failure ONLY from JSON content, ignore exit code
+#     local actual_success="false"  # Default to failure
     
-    # Check if we got valid JSON output
-    if echo "$output" | jq . >/dev/null 2>&1; then
-        # Valid JSON - extract status from anywhere in the JSON
-        local status_value=$(echo "$output" | jq -r '.. | objects | select(has("Status")) | .Status' 2>/dev/null | head -n1)
+#     # Check if we got valid JSON output
+#     if echo "$output" | jq . >/dev/null 2>&1; then
+#         # Valid JSON - extract status from anywhere in the JSON
+#         local status_value=$(echo "$output" | jq -r '.. | objects | select(has("Status")) | .Status' 2>/dev/null | head -n1)
         
-        if [[ "$status_value" == "true" ]]; then
-            actual_success="true"
-        else
-            actual_success="false"
-        fi
-    else
-        # No valid JSON output = failure
-        actual_success="false"
-    fi
+#         if [[ "$status_value" == "true" ]]; then
+#             actual_success="true"
+#         else
+#             actual_success="false"
+#         fi
+#     else
+#         # No valid JSON output = failure
+#         actual_success="false"
+#     fi
     
-    # Compare actual vs expected
-    if [[ "$expected_success" == "$actual_success" ]]; then
-        log_success "$test_name ($connection_type): PASSED"
-        return 0
-    else
-        if [[ "$expected_success" == "true" ]]; then
-            log_error "$test_name ($connection_type): Expected success but got failure"
-        else
-            log_error "$test_name ($connection_type): Expected failure but got success"
-        fi
-        echo "Output: $output"
-        return 1
-    fi
-}
+#     # Compare actual vs expected
+#     if [[ "$expected_success" == "$actual_success" ]]; then
+#         log_success "$test_name ($connection_type): PASSED"
+#         return 0
+#     else
+#         if [[ "$expected_success" == "true" ]]; then
+#             log_error "$test_name ($connection_type): Expected success but got failure"
+#         else
+#             log_error "$test_name ($connection_type): Expected failure but got success"
+#         fi
+#         echo "Output: $output"
+#         return 1
+#     fi
+# }
 
 
 # Individual test functions
