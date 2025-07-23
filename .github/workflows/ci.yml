@@ -279,7 +279,7 @@ jobs:
             bridge-utils
           sudo systemctl start libvirtd
       - name: Setup FreeBSD VM
-        uses: vmactions/freebsd-vm@v
+        uses: vmactions/freebsd-vm@
         id: freebsd-vm
         with:
           release: "15"
