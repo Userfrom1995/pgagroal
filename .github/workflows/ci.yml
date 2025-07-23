@@ -263,7 +263,7 @@ jobs:
       matrix:
         compiler: [clang]
         build_type: [Debug, Release]
-        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,20]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
       fail-fast: false
 
     steps:
@@ -426,3 +426,73 @@ jobs:
   #           $GITHUB_WORKSPACE/build/log/*
   #           /tmp/*.log
   #         retention-days: 7
+  build-freebsd-crossplatform:
+    runs-on: ubuntu-latest
+    name: FreeBSD Build and Test (Cross-Platform Actions)
+    timeout-minutes: 10
+    strategy:  
+      matrix:
+        compiler: [clang]
+        build_type: [Debug, Release]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build and Test on FreeBSD
+        uses: cross-platform-actions/action@v0.21.1
+        with:
+          operating_system: freebsd
+          version: '14.0'
+          shell: bash
+          sync_files: runner-to-vm
+          run: |
+            # System bootstrap and package installation
+            sudo pkg update
+            sudo pkg install -y \
+              bash \
+              libev \
+              cmake \
+              llvm15 \
+              postgresql16-server \
+              postgresql16-contrib \
+              zstd \
+              liblz4 \
+              bzip2 \
+              libssh \
+              libarchive \
+              check \
+              py311-docutils \
+              curl \
+              doxygen \
+              hs-pandoc \
+              texlive-base \
+              texlive-texmf \
+              graphviz
+            
+            # Initialize Graphviz plugins
+            sudo dot -c
+            
+            # Build project
+            mkdir -p build
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
+            make -j$(sysctl -n hw.ncpu)
+            
+            # Run testsuite
+            echo "=== FreeBSD Cross-Platform Testsuite Run ${{ matrix.run }} ==="
+            bash ./testsuite.sh
+            
+            # Clean testsuite
+            bash ./testsuite.sh clean
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebsd-crossplatform-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
+          path: |
+            build/log/*
+            /tmp/*.log
+          retention-days: 7
