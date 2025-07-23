@@ -499,66 +499,66 @@ jobs:
             /tmp/*.log
           retention-days: 7  
 
-build-freebsd-alternative:
-    runs-on: ubuntu-latest
-    name: FreeBSD Build and Test (Alternative Method)
-    timeout-minutes: 15
-    strategy:  
-      matrix:
-        compiler: [clang]
-        build_type: [Debug, Release]
-        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-      fail-fast: false
+# build-freebsd-alternative:
+#     runs-on: ubuntu-latest
+#     name: FreeBSD Build and Test (Alternative Method)
+#     timeout-minutes: 15
+#     strategy:  
+#       matrix:
+#         compiler: [clang]
+#         build_type: [Debug, Release]
+#         run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+#       fail-fast: false
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
       
-      - name: Setup FreeBSD with vmactions (alternative config)
-        uses: vmactions/freebsd-vm@v1
-        with:
-          release: "14.1"
-          usesh: true
-          prepare: |
-            pkg update
-            pkg install -y bash sudo
-          run: |
-            # Install dependencies
-            pkg install -y \
-              libev \
-              cmake \
-              llvm15 \
-              postgresql16-server \
-              postgresql16-contrib \
-              zstd \
-              liblz4 \
-              bzip2 \
-              libssh \
-              libarchive \
-              check \
-              py311-docutils \
-              curl \
-              doxygen \
-              graphviz
+#       - name: Setup FreeBSD with vmactions (alternative config)
+#         uses: vmactions/freebsd-vm@v1
+#         with:
+#           release: "14.1"
+#           usesh: true
+#           prepare: |
+#             pkg update
+#             pkg install -y bash sudo
+#           run: |
+#             # Install dependencies
+#             pkg install -y \
+#               libev \
+#               cmake \
+#               llvm15 \
+#               postgresql16-server \
+#               postgresql16-contrib \
+#               zstd \
+#               liblz4 \
+#               bzip2 \
+#               libssh \
+#               libarchive \
+#               check \
+#               py311-docutils \
+#               curl \
+#               doxygen \
+#               graphviz
             
-            # Build project
-            mkdir -p build
-            cd build
-            cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
-            gmake -j$(sysctl -n hw.ncpu)
+#             # Build project
+#             mkdir -p build
+#             cd build
+#             cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
+#             gmake -j$(sysctl -n hw.ncpu)
             
-            # Run testsuite
-            echo "=== FreeBSD Alternative Testsuite Run ${{ matrix.run }} ==="
-            bash ./testsuite.sh
+#             # Run testsuite
+#             echo "=== FreeBSD Alternative Testsuite Run ${{ matrix.run }} ==="
+#             bash ./testsuite.sh
             
-            # Clean testsuite
-            bash ./testsuite.sh clean
+#             # Clean testsuite
+#             bash ./testsuite.sh clean
 
-      - name: Upload Build Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: freebsd-alternative-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
-          path: |
-            build/log/*
-            /tmp/*.log
-          retention-days: 7
+#       - name: Upload Build Artifacts
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: freebsd-alternative-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
+#           path: |
+#             build/log/*
+#             /tmp/*.log
+#           retention-days: 7
