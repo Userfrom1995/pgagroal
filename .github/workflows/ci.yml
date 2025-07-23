@@ -255,94 +255,94 @@ jobs:
       #   if: always()
 
 
-  build-freebsd:
-    runs-on: ubuntu-latest
-    name: FreeBSD Build and Test
-    timeout-minutes: 30
-    strategy:  
-      matrix:
-        compiler: [clang]
-        build_type: [Debug, Release]
-        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-      fail-fast: false
+  # build-freebsd:
+  #   runs-on: ubuntu-latest
+  #   name: FreeBSD Build and Test
+  #   timeout-minutes: 30
+  #   strategy:  
+  #     matrix:
+  #       compiler: [clang]
+  #       build_type: [Debug, Release]
+  #       run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  #     fail-fast: false
 
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install QEMU dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            qemu-system-x86 \
-            qemu-utils \
-            libvirt-daemon-system \
-            libvirt-clients \
-            bridge-utils
-          sudo systemctl start libvirtd
-      - name: Setup FreeBSD VM
-        uses: vmactions/freebsd-vm@v1
-        id: freebsd-vm
-        with:
-          release: "14.3"
-          usesh: true
-          envs: "PATH,GITHUB_ENV,GITHUB_WORKSPACE,GITHUB_OUTPUT"
-          mem: 6144
-          sync: rsync
-          copyback: true
-          run: |
-            # System bootstrap
-            ASSUME_ALWAYS_YES=yes pkg bootstrap
-            pkg update
-            pkg upgrade -y
-            # Base dependencies
-            pkg install -y \
-              bash \
-              sudo \
-              libev \
-              cmake \
-              llvm11 \
-              postgresql17-server \
-              postgresql17-contrib \
-              zstd \
-              liblz4 \
-              bzip2 \
-              libssh \
-              libarchive \
-              check \
-              py311-docutils \
-              curl \
-              doxygen \
-              hs-pandoc \
-              texlive-base \
-              texlive-texmf \
-              graphviz 
-            # Initialize Graphviz plugins after installation
-            dot -c
-      - name: Build Project
-        shell: freebsd {0}
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/build
-          cd $GITHUB_WORKSPACE/build
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
-          make -j$(sysctl -n hw.ncpu)
-      - name: Debug Testsuite Path
-        shell: freebsd {0}
-        run: |
-          cd "${GITHUB_WORKSPACE}/build"
-          bash ./testsuite.sh
-      - name: Clean Testsuite
-        shell: freebsd {0}
-        run: |
-          cd ${GITHUB_WORKSPACE}/build
-          bash ./testsuite.sh clean
-      - name: Upload Build Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: freebsd-ubuntu-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
-          path: |
-            $GITHUB_WORKSPACE/build/log/*
-            /tmp/*.log
-          retention-days: 7
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install QEMU dependencies
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y \
+  #           qemu-system-x86 \
+  #           qemu-utils \
+  #           libvirt-daemon-system \
+  #           libvirt-clients \
+  #           bridge-utils
+  #         sudo systemctl start libvirtd
+  #     - name: Setup FreeBSD VM
+  #       uses: vmactions/freebsd-vm@v1
+  #       id: freebsd-vm
+  #       with:
+  #         release: "14.3"
+  #         usesh: true
+  #         envs: "PATH,GITHUB_ENV,GITHUB_WORKSPACE,GITHUB_OUTPUT"
+  #         mem: 6144
+  #         sync: rsync
+  #         copyback: true
+  #         run: |
+  #           # System bootstrap
+  #           ASSUME_ALWAYS_YES=yes pkg bootstrap
+  #           pkg update
+  #           pkg upgrade -y
+  #           # Base dependencies
+  #           pkg install -y \
+  #             bash \
+  #             sudo \
+  #             libev \
+  #             cmake \
+  #             llvm11 \
+  #             postgresql17-server \
+  #             postgresql17-contrib \
+  #             zstd \
+  #             liblz4 \
+  #             bzip2 \
+  #             libssh \
+  #             libarchive \
+  #             check \
+  #             py311-docutils \
+  #             curl \
+  #             doxygen \
+  #             hs-pandoc \
+  #             texlive-base \
+  #             texlive-texmf \
+  #             graphviz 
+  #           # Initialize Graphviz plugins after installation
+  #           dot -c
+  #     - name: Build Project
+  #       shell: freebsd {0}
+  #       run: |
+  #         mkdir -p $GITHUB_WORKSPACE/build
+  #         cd $GITHUB_WORKSPACE/build
+  #         cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
+  #         make -j$(sysctl -n hw.ncpu)
+  #     - name: Debug Testsuite Path
+  #       shell: freebsd {0}
+  #       run: |
+  #         cd "${GITHUB_WORKSPACE}/build"
+  #         bash ./testsuite.sh
+  #     - name: Clean Testsuite
+  #       shell: freebsd {0}
+  #       run: |
+  #         cd ${GITHUB_WORKSPACE}/build
+  #         bash ./testsuite.sh clean
+  #     - name: Upload Build Artifacts
+  #       if: always()
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: freebsd-ubuntu-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
+  #         path: |
+  #           $GITHUB_WORKSPACE/build/log/*
+  #           /tmp/*.log
+  #         retention-days: 7
 
   # build-freebsd-macos:
   #   runs-on: macos-latest
@@ -441,12 +441,14 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Build and Test on FreeBSD
-        uses: cross-platform-actions/action@v0.21.1
+        uses: cross-platform-actions/action@v0.25.0
         with:
           operating_system: freebsd
-          version: '14.0'
+          version: '14.1'
           shell: bash
           sync_files: runner-to-vm
+          memory: 4G
+          cpu_count: 2
           run: |
             # System bootstrap and package installation
             sudo pkg update
@@ -492,6 +494,70 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: freebsd-crossplatform-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
+          path: |
+            build/log/*
+            /tmp/*.log
+          retention-days: 7  
+
+build-freebsd-alternative:
+    runs-on: ubuntu-latest
+    name: FreeBSD Build and Test (Alternative Method)
+    timeout-minutes: 15
+    strategy:  
+      matrix:
+        compiler: [clang]
+        build_type: [Debug, Release]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup FreeBSD with vmactions (alternative config)
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.1"
+          usesh: true
+          prepare: |
+            pkg update
+            pkg install -y bash sudo
+          run: |
+            # Install dependencies
+            pkg install -y \
+              libev \
+              cmake \
+              llvm15 \
+              postgresql16-server \
+              postgresql16-contrib \
+              zstd \
+              liblz4 \
+              bzip2 \
+              libssh \
+              libarchive \
+              check \
+              py311-docutils \
+              curl \
+              doxygen \
+              graphviz
+            
+            # Build project
+            mkdir -p build
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
+            gmake -j$(sysctl -n hw.ncpu)
+            
+            # Run testsuite
+            echo "=== FreeBSD Alternative Testsuite Run ${{ matrix.run }} ==="
+            bash ./testsuite.sh
+            
+            # Clean testsuite
+            bash ./testsuite.sh clean
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebsd-alternative-${{ matrix.compiler }}-${{ matrix.build_type }}-run${{ matrix.run }}-logs
           path: |
             build/log/*
             /tmp/*.log
