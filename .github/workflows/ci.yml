@@ -449,10 +449,17 @@ jobs:
           sync_files: runner-to-vm
           memory: 4G
           cpu_count: 4
+          environment_variables: |
+            IGNORE_OSVERSION=yes
+            ASSUME_ALWAYS_YES=yes
           run: |
+            # Set environment variables for non-interactive package installation
+            export IGNORE_OSVERSION=yes
+            export ASSUME_ALWAYS_YES=yes
+            
             # System bootstrap and package installation
-            sudo pkg update
-            sudo pkg install -y \
+            sudo -E pkg update
+            sudo -E pkg install -y \
               bash \
               libev \
               cmake \
