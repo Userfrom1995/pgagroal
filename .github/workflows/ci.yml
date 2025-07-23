@@ -279,10 +279,10 @@ jobs:
             bridge-utils
           sudo systemctl start libvirtd
       - name: Setup FreeBSD VM
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/freebsd-vm@v
         id: freebsd-vm
         with:
-          release: "14.3"
+          release: "15"
           usesh: true
           envs: "PATH,GITHUB_ENV,GITHUB_WORKSPACE,GITHUB_OUTPUT"
           mem: 4096
