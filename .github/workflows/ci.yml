@@ -285,7 +285,7 @@ jobs:
           release: "15"
           usesh: true
           envs: "PATH,GITHUB_ENV,GITHUB_WORKSPACE,GITHUB_OUTPUT"
-          mem: 4096
+          mem: 6144
           sync: rsync
           copyback: true
           run: |
