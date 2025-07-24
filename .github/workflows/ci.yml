@@ -279,15 +279,27 @@ jobs:
           brew install qemu
           # Ensure QEMU is in PATH
           echo "/opt/homebrew/bin" >> $GITHUB_PATH
+      - name: Fix DNS resolution (macOS)
+        run: |
+          # Flush DNS cache on macOS
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder
+          # Test DNS resolution
+          nslookup google.com || true
+          ping -c 1 8.8.8.8 || true
+          # Wait a moment for DNS to stabilize
+          sleep 5
       - name: Setup FreeBSD VM
         uses: vmactions/freebsd-vm@v1
         with:
-          release: "14.3"
+          release: "14.1"
           usesh: true
           envs: "PATH,GITHUB_ENV,GITHUB_WORKSPACE,GITHUB_OUTPUT"
           mem: 2048
           sync: rsync
           copyback: false
+          nat: |
+            "hostfwd=tcp::2222-:22"
           prepare: |
             # Ensure network connectivity
             ping -c 1 8.8.8.8 || true
