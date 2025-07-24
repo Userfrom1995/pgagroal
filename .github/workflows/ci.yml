@@ -282,12 +282,12 @@ jobs:
       - name: Setup FreeBSD VM
         uses: vmactions/freebsd-vm@v1
         with:
-          release: "14.2"
+          release: "14.1"
           usesh: true
           envs: "PATH,GITHUB_ENV,GITHUB_WORKSPACE,GITHUB_OUTPUT"
-          mem: 4096
+          mem: 2048
           sync: rsync
-          copyback: true
+          copyback: false
           prepare: |
             # Ensure network connectivity
             ping -c 1 8.8.8.8 || true
