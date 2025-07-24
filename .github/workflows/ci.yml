@@ -263,9 +263,9 @@ jobs:
 
 
   build-freebsd:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     name: FreeBSD Build and Test
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:  
       matrix:
         compiler: [clang]
@@ -274,11 +274,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Enable KVM group perms
+      - name: Install QEMU dependencies
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          brew install qemu
+          # Ensure QEMU is in PATH
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
       - name: Setup FreeBSD VM
         uses: vmactions/freebsd-vm@v1
         with:
@@ -288,6 +288,9 @@ jobs:
           mem: 4096
           sync: rsync
           copyback: true
+          prepare: |
+            # Ensure network connectivity
+            ping -c 1 8.8.8.8 || true
           run: |
             # System bootstrap
             ASSUME_ALWAYS_YES=yes pkg bootstrap
