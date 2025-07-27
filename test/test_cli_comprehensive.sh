@@ -830,7 +830,7 @@ test_conf_commands() {
     
     # Test conf set (be careful with this)
     execute_cli_test "conf set log_level" "conf set log_level debug" "true" "local"
-    execute_cli_test "conf set log_level reset" "conf set log_level info" "true" "local"
+    execute_cli_test "conf set log_level reset" "conf set log_level info" "true" "remote"
 }
 
 test_enable_disable_commands() {
@@ -903,7 +903,7 @@ run_all_tests() {
     # Basic functionality tests
     test_ping_command
     test_status_commands
-    # test_conf_commands
+    test_conf_commands
     
     # # Database management tests
     # test_enable_disable_commands
