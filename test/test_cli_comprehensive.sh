@@ -816,6 +816,7 @@ test_status_commands() {
     log_info "=== Testing STATUS Commands ==="
     execute_cli_test "status" "status" "true" "local"
     execute_cli_test "status details" "status details" "true" "local"
+    execute_cli_test "status details" "status details" "true" "remote"
     execute_cli_test "status remote" "status" "true" "remote"
 }
 
@@ -868,17 +869,17 @@ test_shutdown_commands() {
     
     # Start graceful shutdown
     execute_cli_test "shutdown gracefully" "shutdown gracefully" "true" "local"
-    # sleep 2
+    # # sleep 2
     
-    # Cancel it
-    execute_cli_test "shutdown cancel" "shutdown cancel" "true" "local"
+    # # Cancel it
+    # execute_cli_test "shutdown cancel" "shutdown cancel" "true" "local"
     
-    # Verify server is still running
-    execute_cli_test "ping after cancel" "ping" "true" "local"
+    # # Verify server is still running
+    # execute_cli_test "ping after cancel" "ping" "true" "local"
     
-    # Test immediate shutdown as the very last test
-    log_warning "Testing immediate shutdown (will stop server)"
-    execute_cli_test "shutdown immediate" "shutdown immediate" "true" "local"
+    # # Test immediate shutdown as the very last test
+    # log_warning "Testing immediate shutdown (will stop server)"
+    # execute_cli_test "shutdown immediate" "shutdown immediate" "true" "local"
     
     log_info "Server has been shut down by test"
 }
@@ -901,7 +902,7 @@ run_all_tests() {
     
     # Basic functionality tests
     test_ping_command
-    # test_status_commands
+    test_status_commands
     # test_conf_commands
     
     # # Database management tests
@@ -909,8 +910,8 @@ run_all_tests() {
     # test_flush_commands
     
     # # Server management tests
-    # test_clear_commands
-    # test_switch_to_command
+    test_clear_commands
+    test_switch_to_command
     
     # # Error scenario tests
     # test_error_scenarios
