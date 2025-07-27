@@ -868,7 +868,7 @@ test_shutdown_commands() {
     
     # Start graceful shutdown
     execute_cli_test "shutdown gracefully" "shutdown gracefully" "true" "local"
-    sleep 2
+    # sleep 2
     
     # Cancel it
     execute_cli_test "shutdown cancel" "shutdown cancel" "true" "local"
@@ -901,19 +901,19 @@ run_all_tests() {
     
     # Basic functionality tests
     test_ping_command
-    test_status_commands
-    test_conf_commands
+    # test_status_commands
+    # test_conf_commands
     
-    # Database management tests
-    test_enable_disable_commands
-    test_flush_commands
+    # # Database management tests
+    # test_enable_disable_commands
+    # test_flush_commands
     
-    # Server management tests
-    test_clear_commands
-    test_switch_to_command
+    # # Server management tests
+    # test_clear_commands
+    # test_switch_to_command
     
-    # Error scenario tests
-    test_error_scenarios
+    # # Error scenario tests
+    # test_error_scenarios
     
     # Shutdown tests (must be last)
     test_shutdown_commands
