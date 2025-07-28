@@ -713,7 +713,7 @@ test_conf_commands() {
     log_info "=== Testing CONF Commands ==="
     execute_cli_test "conf ls" "conf ls" "true" "local"
     execute_cli_test "conf get max_connections" "conf get max_connections" "true" "local"
-    # execute_cli_test "conf get nonexistent" "conf get nonexistent_param" "false" "local"
+    execute_cli_test "conf get nonexistent" "conf get nonexistent_param" "false" "local"
     execute_cli_test "conf alias" "conf alias" "true" "local"
     execute_cli_test "conf ls remote" "conf ls" "true" "remote"
     
