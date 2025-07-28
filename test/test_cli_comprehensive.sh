@@ -803,7 +803,7 @@ run_all_tests() {
     test_switch_to_command
     
     # # Error scenario tests
-    # test_error_scenarios
+    test_error_scenarios
     
     # Shutdown tests (must be last)
     test_shutdown_commands
