@@ -73,6 +73,12 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_debug() {
+    if [[ "${DEBUG:-false}" == "true" ]]; then
+        echo -e "${YELLOW}[DEBUG]${NC} $1"
+    fi
+}
+
 # Port and process utilities
 is_port_in_use() {
     local port=$1
@@ -430,29 +436,32 @@ validate_json_structure() {
     local json_output="$1"
     local test_name="$2"
     
+    # Check if we have any output at all
+    if [[ -z "$json_output" ]]; then
+        log_error "$test_name: No output received - CLI/server may be down"
+        return 1
+    fi
+    
+    # Check if output is valid JSON
     if ! echo "$json_output" | jq . >/dev/null 2>&1; then
         log_error "$test_name: Invalid JSON output"
+        log_error "$test_name: Raw output: $json_output"
         return 1
     fi
     
     # Check for required JSON structure (actual pgagroal CLI format)
     local command_name=$(echo "$json_output" | jq -r '.Header.Command // "null"')
-    local outcome_status=$(echo "$json_output" | jq -r '.Outcome.Status // "null"')
     
-
-    if ! echo "$json_output" | jq -e '.Outcome | has("Status")' >/dev/null; then
-    log_error "$test_name: Missing Outcome.Status"
-    return 1
+    # Check if we have the expected structure
+    if ! echo "$json_output" | jq -e '.Outcome | has("Status")' >/dev/null 2>&1; then
+        log_error "$test_name: Missing Outcome.Status in JSON structure"
+        return 1
     fi
 
     if [[ "$command_name" == "null" || -z "$command_name" ]]; then
-    log_error "$test_name: Missing Header.Command"
-    return 1
+        log_error "$test_name: Missing Header.Command in JSON structure"
+        return 1
     fi
-    # if [[ "$outcome_status" == "null" || -z "$outcome_status" ]]; then
-    # log_error "$test_name: Missing Outcome.Status"
-    # return 1
-    # fi
     
     return 0
 }
@@ -556,75 +565,66 @@ validate_command_success() {
     local expected_success="$2"  # true/false
     local test_name="$3"
     
-    # Function to recursively search for "Status" in the entire JSON
-    find_status_in_json() {
-        local json="$1"
-        
+    # Extract the Outcome.Status value (this should be the primary status indicator)
+    local actual_status=$(echo "$json_output" | jq -r '.Outcome.Status // "null"' 2>/dev/null)
+    
+    # If we couldn't find Outcome.Status, try fallback methods
+    if [[ "$actual_status" == "null" || -z "$actual_status" ]]; then
         # Try to find Status at any level using jq's recursive descent
-        # This will find "Status" anywhere in the JSON structure
-        local status_values=$(echo "$json" | jq -r '.. | objects | select(has("Status")) | .Status' 2>/dev/null)
+        local status_values=$(echo "$json_output" | jq -r '.. | objects | select(has("Status")) | .Status' 2>/dev/null)
         
-        # If we found any Status values, return the first one
         if [[ -n "$status_values" ]]; then
-            echo "$status_values" | head -n1
-            return 0
-        fi
-        
-        # Fallback: try common legacy formats
-        local legacy_status=$(echo "$json" | jq -r '.command.status // empty' 2>/dev/null)
-        if [[ -n "$legacy_status" && "$legacy_status" != "null" ]]; then
-            # Convert legacy status to boolean-like
-            if [[ "$legacy_status" == "OK" ]]; then
-                echo "true"
+            actual_status=$(echo "$status_values" | head -n1)
+        else
+            # Try legacy formats
+            local legacy_status=$(echo "$json_output" | jq -r '.command.status // empty' 2>/dev/null)
+            if [[ -n "$legacy_status" && "$legacy_status" != "null" ]]; then
+                # Convert legacy status to boolean-like
+                if [[ "$legacy_status" == "OK" ]]; then
+                    actual_status="true"
+                else
+                    actual_status="false"
+                fi
             else
-                echo "false"
+                # Check for error field as another indicator
+                local error_field=$(echo "$json_output" | jq -r '.command.error // .Outcome.Error // empty' 2>/dev/null)
+                if [[ -n "$error_field" && "$error_field" != "null" ]]; then
+                    # If error is 0 or false, it's success; otherwise failure
+                    if [[ "$error_field" == "0" || "$error_field" == "false" ]]; then
+                        actual_status="true"
+                    else
+                        actual_status="false"
+                    fi
+                fi
             fi
-            return 0
         fi
-        
-        # Check for error field as another indicator
-        local error_field=$(echo "$json" | jq -r '.command.error // .Outcome.Error // empty' 2>/dev/null)
-        if [[ -n "$error_field" && "$error_field" != "null" ]]; then
-            # If error is 0 or false, it's success; otherwise failure
-            if [[ "$error_field" == "0" || "$error_field" == "false" ]]; then
-                echo "true"
-            else
-                echo "false"
-            fi
-            return 0
-        fi
-        
-        # No status found anywhere
-        return 1
-    }
+    fi
     
-    # Find the status value anywhere in the JSON
-    local actual_status
-    actual_status=$(find_status_in_json "$json_output")
-    local find_result=$?
-    
-    # Debug output
-    log_info "$test_name: Found status='$actual_status', expected_success='$expected_success'"
-    
-    # If we couldn't find any status indicator, treat as failure
-    if [[ $find_result -ne 0 ]]; then
+    # If we still couldn't find any status indicator, treat as failure
+    if [[ "$actual_status" == "null" || -z "$actual_status" ]]; then
         log_error "$test_name: No status indicator found in JSON response"
+        log_error "$test_name: Expected: $expected_success, Received: <no status found>"
         return 1
     fi
     
-    # Now compare the found status with expected result
+    # Debug output
+    log_info "$test_name: Status validation - Expected: $expected_success, Received: $actual_status"
+    
+    # Compare the found status with expected result
     if [[ "$expected_success" == "true" ]]; then
         # We expect success
         if [[ "$actual_status" == "true" ]]; then
             return 0  # Success as expected
         else
-            log_error "$test_name: Expected success but got Status='$actual_status'"
+            log_error "$test_name: Expected success but got failure"
+            log_error "$test_name: Expected: true, Received: $actual_status"
             return 1
         fi
     else
         # We expect failure
         if [[ "$actual_status" == "true" ]]; then
-            log_error "$test_name: Expected failure but got success (Status='$actual_status')"
+            log_error "$test_name: Expected failure but got success"
+            log_error "$test_name: Expected: false, Received: $actual_status"
             return 1
         else
             return 0  # Failure as expected
@@ -663,29 +663,77 @@ execute_cli_test() {
         exit_code=$?
     fi
     
-    # # Validate exit code
-    # if [ $exit_code -ne 0 ]; then
-    #     log_error "$test_name ($connection_type): Failure  $exit_code"
-    #     echo "Output: $output"
-    #     FAILED_TESTS+=("$test_name ($connection_type)")
-    #     ((TESTS_FAILED++))
-    #     return 1
-    # fi
+    # Convert expected_success to expected exit code for comparison
+    local expected_exit_code
+    if [[ "$expected_success" == "true" ]]; then
+        expected_exit_code=0
+    else
+        expected_exit_code=1
+    fi
     
-    # Validate JSON structure if command succeeded
+    # Check if exit code matches expectation
+    local exit_code_matches=false
+    if [[ $exit_code -eq $expected_exit_code ]]; then
+        exit_code_matches=true
+    fi
+    
+    # Handle different scenarios
     if [[ $exit_code -eq 0 ]]; then
+        # Command executed successfully, validate JSON structure and content
         if ! validate_json_structure "$output" "$test_name ($connection_type)"; then
-            echo "Output: $output"
+            log_error "$test_name ($connection_type): JSON structure validation failed"
+            echo "Command output: $output"
             FAILED_TESTS+=("$test_name ($connection_type)")
             ((TESTS_FAILED++))
             return 1
         fi
         
         if ! validate_command_success "$output" "$expected_success" "$test_name ($connection_type)"; then
-            echo "Output: $output"
+            log_error "$test_name ($connection_type): Command success validation failed"
+            echo "Command output: $output"
             FAILED_TESTS+=("$test_name ($connection_type)")
             ((TESTS_FAILED++))
             return 1
+        fi
+        
+        # Additional check: exit code should match JSON status
+        local json_status=$(echo "$output" | jq -r '.Outcome.Status // "null"' 2>/dev/null)
+        if [[ "$json_status" == "true" && $exit_code -ne 0 ]] || [[ "$json_status" == "false" && $exit_code -eq 0 ]]; then
+            log_warning "$test_name ($connection_type): Exit code ($exit_code) doesn't match JSON status ($json_status)"
+        fi
+        
+    else
+        # Command failed (non-zero exit code)
+        if [[ "$expected_success" == "true" ]]; then
+            # We expected success but got failure
+            log_error "$test_name ($connection_type): Command failed unexpectedly"
+            log_error "$test_name ($connection_type): Expected: success (exit code 0), Received: failure (exit code $exit_code)"
+            
+            # Check if we have any output to analyze
+            if [[ -n "$output" ]]; then
+                echo "Command output: $output"
+                # Try to parse JSON even on failure to get more info
+                if echo "$output" | jq . >/dev/null 2>&1; then
+                    local json_status=$(echo "$output" | jq -r '.Outcome.Status // "unknown"' 2>/dev/null)
+                    log_error "$test_name ($connection_type): JSON Status: $json_status"
+                fi
+            else
+                log_error "$test_name ($connection_type): No output received - CLI/server may be down"
+            fi
+            
+            FAILED_TESTS+=("$test_name ($connection_type)")
+            ((TESTS_FAILED++))
+            return 1
+        else
+            # We expected failure and got failure - this is correct
+            log_info "$test_name ($connection_type): Command failed as expected (exit code: $exit_code)"
+            
+            # If we have JSON output even on failure, validate it
+            if [[ -n "$output" ]] && echo "$output" | jq . >/dev/null 2>&1; then
+                if validate_json_structure "$output" "$test_name ($connection_type)" 2>/dev/null; then
+                    validate_command_success "$output" "$expected_success" "$test_name ($connection_type)" || true
+                fi
+            fi
         fi
     fi
     
