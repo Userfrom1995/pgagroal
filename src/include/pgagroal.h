@@ -77,6 +77,7 @@ extern "C" {
 #define DEFAULT_MAX_CONNECTION_AGE                0
 #define DEFAULT_BACKGROUND_INTERVAL             300
 #define DEFAULT_AUTHENTICATION_TIMEOUT            5
+#define DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT     86400
 
 #define MAX_USERNAME_LENGTH    128
 #define MAX_DATABASE_LENGTH    256
@@ -660,6 +661,7 @@ struct main_configuration
    unsigned int rotate_frontend_password_timeout;  /**< The rotation frontend password timeout in seconds */
    int rotate_frontend_password_length;            /**< Length of randomised passwords */
    unsigned int max_connection_age;                /**< The max connection age in seconds */
+   unsigned int graceful_shutdown_timeout;         /**< The graceful shutdown timeout in seconds */
    int validation;                                 /**< Validation mode */
    unsigned int background_interval;               /**< Background validation timer in seconds */
    int max_retries;                                /**< The maximum number of retries */

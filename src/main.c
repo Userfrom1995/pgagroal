@@ -83,6 +83,7 @@ static void shutdown_cb(void);
 static void reload_cb(void);
 static void service_reload_cb(void);
 static void graceful_cb(void);
+static void graceful_shutdown_monitor(void);
 static void coredump_cb(void);
 static void sigchld_cb(void);
 static void idle_timeout_cb(void);
@@ -104,6 +105,7 @@ static void shutdown_ports(void);
 static volatile int keep_running = 1;
 static char** argv_ptr;
 static struct event_loop* main_loop = NULL;
+static pid_t graceful_monitor_pid = 0;
 static struct accept_io io_main[MAX_FDS];
 static struct accept_io io_mgt;
 static struct accept_io io_uds;
@@ -1115,9 +1117,6 @@ read_superuser_path:
    pgagroal_signal_init(&signal_watcher[6].sig_w, sigchld_cb, SIGCHLD);
    pgagroal_signal_init(&signal_watcher[7].sig_w, service_reload_cb, SIGUSR1);
 
-   signal_watcher[7].slot = -1;
-   pgagroal_signal_start(&signal_watcher[7].sig_w);
-
    for (int i = 0; i < SIGNALS_NUMBER; i++)
    {
       signal_watcher[i].slot = -1;
@@ -1710,11 +1709,74 @@ accept_mgt_cb(struct io_watcher* watcher)
 
       start_time = time(NULL);
 
+      /* Check if graceful shutdown monitor is already running */
+      if (graceful_monitor_pid > 0)
+      {
+         /* Check if the monitor process is still alive using kill(pid, 0) */
+         if (kill(graceful_monitor_pid, 0) == 0)
+         {
+            /* Monitor is still running - inform user and return */
+            pgagroal_log_info("pgagroal: graceful shutdown already in progress (monitor PID: %d)", graceful_monitor_pid);
+            pgagroal_log_warn("pgagroal: graceful shutdown request ignored - monitor already running (PID: %d)", graceful_monitor_pid);
+            
+            end_time = time(NULL);
+            pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload);
+            return;
+         }
+         else
+         {
+            /* Previous monitor is no longer running, we can start a new one */
+            pgagroal_log_debug("pgagroal: previous graceful monitor (PID: %d) is no longer running, starting new monitor", graceful_monitor_pid);
+            graceful_monitor_pid = 0;  /* Reset PID */
+         }
+      }
+
+      /* Set graceful flag before forking */
       config->gracefully = true;
 
-      end_time = time(NULL);
+      /* Check if immediate shutdown is possible */
+      if (atomic_load(&config->active_connections) == 0)
+      {
+         pgagroal_log_info("pgagroal: graceful shutdown - no active connections, shutting down immediately");
+         pgagroal_pool_status();
+         
+         end_time = time(NULL);
+         pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload);
+         
+         /* Trigger immediate shutdown */
+         pgagroal_event_loop_break();
+      }
+      else
+      {
+         /* Start graceful shutdown monitor in a fork() */
+         pid = fork();
+         if (pid == -1)
+         {
+            /* Reset graceful flag on fork failure */
+            config->gracefully = false;
+            pgagroal_management_response_error(NULL, client_fd, NULL, MANAGEMENT_ERROR_GRACEFULLY_NOFORK, compression, encryption, payload);
+            pgagroal_log_error("Graceful shutdown: Fork failed - %s", strerror(errno));
+            goto error;
+         }
+         else if (pid == 0)
+         {
+            /* Child process - run monitor */
+            pgagroal_event_loop_fork();
+            shutdown_ports();
+            graceful_shutdown_monitor();
+            /* Never returns */
+         }
+         else
+         {
+            /* Parent process - monitor started successfully */
+            graceful_monitor_pid = pid;  /* Track the monitor PID */
+            pgagroal_log_info("pgagroal: graceful shutdown monitor started (PID: %d) for %d active connections", 
+                              pid, atomic_load(&config->active_connections));
+         }
 
-      pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload);
+         end_time = time(NULL);
+         pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload);
+      }
    }
    else if (id == MANAGEMENT_SHUTDOWN)
    {
@@ -2035,15 +2097,7 @@ accept_mgt_cb(struct io_watcher* watcher)
       goto error;
    }
 
-   if (keep_running && config->gracefully)
-   {
-      if (atomic_load(&config->active_connections) == 0)
-      {
-         pgagroal_pool_status();
 
-         pgagroal_event_loop_break();
-      }
-   }
 
    free(str);
 
@@ -2403,10 +2457,28 @@ accept_management_cb(struct io_watcher* watcher)
 static void
 shutdown_cb(void)
 {
-   pgagroal_log_debug("pgagroal: shutdown requested");
-   pgagroal_pool_status();
+   // Kill and reap graceful shutdown monitor if running
+   if (graceful_monitor_pid > 0)
+   {
+      if (kill(graceful_monitor_pid, SIGKILL) == -1 && errno == ESRCH)
+      {
+         pgagroal_log_debug("Monitor process already exited (PID: %d)", graceful_monitor_pid);
+      }
+
+      int status = 0;
+      if (waitpid(graceful_monitor_pid, &status, 0) == -1 && errno == ECHILD)
+      {
+         pgagroal_log_debug("Monitor process already reaped (PID: %d)", graceful_monitor_pid);
+      }
+      else
+      {
+         pgagroal_log_debug("Graceful shutdown monitor killed and reaped.");
+      }
+      graceful_monitor_pid = 0;
+   }
+
+   pgagroal_log_info("pgagroal: shutdown requested");
    pgagroal_event_loop_break();
-   keep_running = 0;
 }
 
 static void
@@ -2430,10 +2502,120 @@ graceful_cb(void)
 
    if (atomic_load(&config->active_connections) == 0)
    {
+      pgagroal_log_info("pgagroal: graceful shutdown - no active connections");
       pgagroal_pool_status();
+
+      // Kill and reap graceful shutdown monitor if running
+      if (graceful_monitor_pid > 0)
+      {
+         if (kill(graceful_monitor_pid, SIGKILL) == -1 && errno == ESRCH)
+         {
+            pgagroal_log_debug("Monitor process already exited (PID: %d)", graceful_monitor_pid);
+         }
+
+         int status = 0;
+         if (waitpid(graceful_monitor_pid, &status, 0) == -1 && errno == ECHILD)
+         {
+            pgagroal_log_debug("Monitor process already reaped (PID: %d)", graceful_monitor_pid);
+         }
+         else
+         {
+            pgagroal_log_debug("Graceful shutdown monitor killed and reaped.");
+         }
+         graceful_monitor_pid = 0;
+      }
 
       pgagroal_event_loop_break();
    }
+}
+
+static void
+graceful_shutdown_monitor(void)
+{
+   struct main_configuration* config;
+   int timeout_seconds;
+   int elapsed_deciseconds = 0; /* Track in 100ms increments */
+
+   pgagroal_start_logging();
+   pgagroal_memory_init();
+
+   config = (struct main_configuration*)shmem;
+   
+   /* Capture timeout value at monitor start - locked for entire monitor lifetime */
+   timeout_seconds = (config->graceful_shutdown_timeout == 0) ? 86400 : config->graceful_shutdown_timeout;
+
+   pgagroal_log_debug("graceful_shutdown_monitor: started with timeout %d seconds (locked for this monitor)", timeout_seconds);
+
+   /* Check initial state - if no connections, shut down immediately */
+   if (atomic_load(&config->active_connections) == 0)
+   {
+      pgagroal_log_info("pgagroal: graceful shutdown - no active connections");
+      pgagroal_pool_status();
+      pgagroal_log_info("pgagroal: graceful shutdown - all connections closed");
+      
+      /* Signal parent process for graceful shutdown completion */
+      kill(getppid(), SIGTRAP);
+      
+      pgagroal_memory_destroy();
+      pgagroal_stop_logging();
+      exit(0);
+   }
+
+   /* Continuously monitor until conditions are met */
+   while (keep_running && elapsed_deciseconds < (timeout_seconds * 10))
+   {
+      /* Check if graceful flag is still set (shutdown cancel was called) */
+      if (!config->gracefully)
+      {
+         pgagroal_log_debug("graceful_shutdown_monitor: graceful flag cleared, exiting");
+         pgagroal_log_info("pgagroal: graceful shutdown - all connections closed");
+         pgagroal_memory_destroy();
+         pgagroal_stop_logging();
+         exit(0);
+      }
+
+      /* Check if all connections are closed */
+      if (atomic_load(&config->active_connections) == 0)
+      {
+         pgagroal_log_info("pgagroal: graceful shutdown - all connections closed");
+         pgagroal_pool_status();
+         pgagroal_log_info("pgagroal: graceful shutdown - all connections closed");
+
+         /* Signal parent process for graceful shutdown completion */
+         kill(getppid(), SIGTRAP);
+         
+         pgagroal_memory_destroy();
+         pgagroal_stop_logging();
+         exit(0);
+      }
+
+      /* Sleep for 100ms before checking again */
+      usleep(100000);
+      elapsed_deciseconds++;
+      
+      /* Log progress every 30 seconds */
+      if (elapsed_deciseconds % 300 == 0)
+      {
+         pgagroal_log_info("graceful_shutdown_monitor: waiting for %d connections to close (%d/%d seconds elapsed)",
+                           atomic_load(&config->active_connections), 
+                           elapsed_deciseconds / 10, 
+                           timeout_seconds);
+      }
+   }
+
+   /* If we exit the loop, timeout was reached - force shutdown */
+   if (elapsed_deciseconds >= (timeout_seconds * 10))
+   {
+      pgagroal_log_warn("graceful_shutdown_monitor: timeout reached after %d seconds with %d active connections, forcing shutdown",
+                        timeout_seconds, atomic_load(&config->active_connections));
+      
+      /* Force shutdown via SIGTERM instead of graceful SIGTRAP */
+      kill(getppid(), SIGTERM);
+   }
+
+   pgagroal_memory_destroy();
+   pgagroal_stop_logging();
+   exit(0);
 }
 
 static void

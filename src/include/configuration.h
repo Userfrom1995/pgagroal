@@ -97,6 +97,7 @@ extern "C" {
 #define CONFIGURATION_ARGUMENT_ROTATE_FRONTEND_PASSWORD_TIMEOUT "rotate_frontend_password_timeout"
 #define CONFIGURATION_ARGUMENT_ROTATE_FRONTEND_PASSWORD_LENGTH  "rotate_frontend_password_length"
 #define CONFIGURATION_ARGUMENT_MAX_CONNECTION_AGE               "max_connection_age"
+#define CONFIGURATION_ARGUMENT_GRACEFUL_SHUTDOWN_TIMEOUT        "graceful_shutdown_timeout"
 #define CONFIGURATION_ARGUMENT_VALIDATION                       "validation"
 #define CONFIGURATION_ARGUMENT_BACKGROUND_INTERVAL              "background_interval"
 #define CONFIGURATION_ARGUMENT_MAX_RETRIES                      "max_retries"

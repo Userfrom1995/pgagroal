@@ -151,6 +151,7 @@ pgagroal_init_configuration(void* shm)
    config->rotate_frontend_password_timeout = DEFAULT_ROTATE_FRONTEND_PASSWORD_TIMEOUT;
    config->rotate_frontend_password_length = MIN_PASSWORD_LENGTH;
    config->max_connection_age = DEFAULT_MAX_CONNECTION_AGE;
+   config->graceful_shutdown_timeout = DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT;
    config->validation = VALIDATION_OFF;
    config->background_interval = DEFAULT_BACKGROUND_INTERVAL;
    config->max_retries = 5;
@@ -457,6 +458,11 @@ pgagroal_validate_configuration(void* shm, bool has_unix_socket, bool has_main_s
    if (config->common.authentication_timeout == 0)
    {
       config->common.authentication_timeout = DEFAULT_AUTHENTICATION_TIMEOUT;
+   }
+
+   if (config->graceful_shutdown_timeout == 0)
+   {
+      pgagroal_log_debug("pgagroal: graceful_shutdown_timeout set to 0, using 24-hour maximum timeout");
    }
 
    if (config->disconnect_client <= 0)
@@ -3356,6 +3362,7 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    config->rotate_frontend_password_timeout = reload->rotate_frontend_password_timeout;
    config->rotate_frontend_password_length = reload->rotate_frontend_password_length;
    config->max_connection_age = reload->max_connection_age;
+   config->graceful_shutdown_timeout = reload->graceful_shutdown_timeout;
    config->validation = reload->validation;
    config->background_interval = reload->background_interval;
    config->max_retries = reload->max_retries;
@@ -4445,6 +4452,10 @@ pgagroal_write_config_value(char* buffer, char* config_key, size_t buffer_size)
       {
          return to_int(buffer, config->rotate_frontend_password_timeout);
       }
+      else if (!strncmp(key, "graceful_shutdown_timeout", MISC_LENGTH))
+      {
+         return to_int(buffer, config->graceful_shutdown_timeout);
+      }
       else if (!strncmp(key, "rotate_frontend_password_length", MISC_LENGTH))
       {
          return to_int(buffer, config->rotate_frontend_password_length);
@@ -5396,6 +5407,19 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
          unknown = true;
       }
    }
+   else if (key_in_section("graceful_shutdown_timeout", section, key, true, &unknown))
+   {
+      if (as_seconds(value, &config->graceful_shutdown_timeout, DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT))
+      {
+         pgagroal_log_warn("Invalid graceful_shutdown_timeout value '%s', using default %d seconds", 
+                           value, DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT);
+         unknown = true;
+      }
+      else
+      {
+         pgagroal_log_debug("graceful_shutdown_timeout set to %d seconds", config->graceful_shutdown_timeout);
+      }
+   }
    else if (key_in_section("rotate_frontend_password_length", section, key, true, &unknown))
    {
       if (as_int(value, &config->rotate_frontend_password_length))
@@ -6157,6 +6181,7 @@ add_configuration_response(struct json* res)
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_ROTATE_FRONTEND_PASSWORD_TIMEOUT, (uintptr_t)config->rotate_frontend_password_timeout, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_ROTATE_FRONTEND_PASSWORD_LENGTH, (uintptr_t)config->rotate_frontend_password_length, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_MAX_CONNECTION_AGE, (uintptr_t)config->max_connection_age, ValueInt64);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_GRACEFUL_SHUTDOWN_TIMEOUT, (uintptr_t)config->graceful_shutdown_timeout, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_VALIDATION, (uintptr_t)config->validation, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_BACKGROUND_INTERVAL, (uintptr_t)config->background_interval, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_MAX_RETRIES, (uintptr_t)config->max_retries, ValueInt64);
