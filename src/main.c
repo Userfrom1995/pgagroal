@@ -1789,7 +1789,7 @@ accept_mgt_cb(struct io_watcher* watcher)
 
       pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload);
 
-      pgagroal_event_loop_break();
+      shutdown_cb();
    }
    else if (id == MANAGEMENT_CANCEL_SHUTDOWN)
    {
