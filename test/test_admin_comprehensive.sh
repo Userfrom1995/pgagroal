@@ -333,8 +333,8 @@ test_user_management_basic() {
     # Test user list with JSON format (note: pgagroal-admin has a bug where it prints usernames to stdout even in JSON mode)
     execute_admin_test "user list JSON" "-f $TEST_USERS_FILE user ls --format json" "true" "json" "false"
     
-    # Test adding duplicate user (should fail or update)
-    execute_admin_test "user add duplicate" "-f $TEST_USERS_FILE -U $TEST_USER1 -P ${TEST_PASSWORD1}new user add" "true" "text"
+    # Test adding duplicate user (should fail with "Existing user" error)
+    execute_admin_test "user add duplicate" "-f $TEST_USERS_FILE -U $TEST_USER1 -P ${TEST_PASSWORD1}new user add" "false" "text"
 }
 
 test_user_management_advanced() {
