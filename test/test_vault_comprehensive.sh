@@ -395,10 +395,25 @@ EOF
         rm -f "$CONFIG_DIR/pgagroal_users.conf"
     fi
     
+    # Add the PostgreSQL user
     if [[ "$OS" == "FreeBSD" ]]; then
         su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add"
     else
         $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add
+    fi
+    
+    # IMPORTANT: Frontend users must also exist in regular users configuration
+    # Add frontend users to regular users file (required for validation)
+    local frontend_pass1="frontend_password_123"  # 20 chars
+    local frontend_pass2="frontend_password_456"  # 20 chars
+    
+    log_debug "Adding frontend users to regular users configuration (required for validation)"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $FRONTEND_USER1 -P $frontend_pass1 user add"
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $FRONTEND_USER2 -P $frontend_pass2 user add"
+    else
+        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $FRONTEND_USER1 -P $frontend_pass1 user add
+        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $FRONTEND_USER2 -P $frontend_pass2 user add
     fi
     
     # Create admin configuration
