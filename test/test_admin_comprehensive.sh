@@ -173,9 +173,13 @@ execute_admin_test() {
         full_command="$EXECUTABLE_DIR/pgagroal-admin $admin_command"
     fi
     
+    # Log the command being executed for debugging
+    log_debug "$test_name: Executing command: $full_command"
+    
     # Execute command with timeout - handle FreeBSD vs other systems
     if [[ "$OS" == "FreeBSD" ]]; then
         # For FreeBSD, run as postgres user
+        log_debug "$test_name: Running as postgres user on FreeBSD"
         if output=$(timeout $TEST_TIMEOUT su - postgres -c "$full_command" 2>&1); then
             exit_code=0
         else
@@ -187,6 +191,7 @@ execute_admin_test() {
         fi
     else
         # For other systems, run directly
+        log_debug "$test_name: Running directly on $OS"
         if output=$(timeout $TEST_TIMEOUT $full_command 2>&1); then
             exit_code=0
         else
@@ -198,17 +203,38 @@ execute_admin_test() {
         fi
     fi
     
+    # Always log command execution details for debugging
+    log_debug "$test_name: Command executed: $full_command"
+    log_debug "$test_name: Exit code: $exit_code"
+    log_debug "$test_name: Output length: ${#output} characters"
+    
     # Validate results
     local test_passed=true
     
-    # Check exit code
+    # Check exit code and provide detailed debugging information
     if [[ "$expected_success" == "true" && $exit_code -ne 0 ]]; then
-        log_error "$test_name: Expected success but command failed (exit code: $exit_code)"
-        log_error "$test_name: Output: $output"
+        log_error "$test_name: Expected success but command failed"
+        log_error "$test_name: ===== COMMAND EXECUTION DETAILS ====="
+        log_error "$test_name: Command: $full_command"
+        log_error "$test_name: Exit Code: $exit_code"
+        log_error "$test_name: Platform: $OS"
+        log_error "$test_name: Executable Dir: $EXECUTABLE_DIR"
+        log_error "$test_name: Working Dir: $(pwd)"
+        log_error "$test_name: ===== COMMAND OUTPUT ====="
+        log_error "$test_name: $output"
+        log_error "$test_name: ===== END OUTPUT ====="
         test_passed=false
     elif [[ "$expected_success" == "false" && $exit_code -eq 0 ]]; then
         log_error "$test_name: Expected failure but command succeeded"
-        log_error "$test_name: Output: $output"
+        log_error "$test_name: ===== COMMAND EXECUTION DETAILS ====="
+        log_error "$test_name: Command: $full_command"
+        log_error "$test_name: Exit Code: $exit_code"
+        log_error "$test_name: Platform: $OS"
+        log_error "$test_name: Executable Dir: $EXECUTABLE_DIR"
+        log_error "$test_name: Working Dir: $(pwd)"
+        log_error "$test_name: ===== COMMAND OUTPUT ====="
+        log_error "$test_name: $output"
+        log_error "$test_name: ===== END OUTPUT ====="
         test_passed=false
     fi
     
