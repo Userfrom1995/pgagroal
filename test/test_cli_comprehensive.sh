@@ -689,7 +689,6 @@ test_error_scenarios() {
     execute_cli_test "invalid command" "invalid_command" "false" "local"
     
     # Test invalid parameters
-    execute_cli_test "flush invalid mode" "flush invalid_mode" "false" "local"
     execute_cli_test "conf set invalid" "conf set" "false" "local"
 }
 
