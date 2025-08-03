@@ -262,7 +262,11 @@ create_postgresql_cluster() {
         return 1
     fi
 
-    run_as_postgres "$INITDB_PATH -k -D $DATA_DIR"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$INITDB_PATH -k -D $DATA_DIR"
+    else
+        $INITDB_PATH -k -D $DATA_DIR
+    fi
     
     # Configure PostgreSQL
     LOG_ABS_PATH=$(realpath "$LOG_DIR")
@@ -297,7 +301,11 @@ start_postgresql() {
         return 1
     fi
 
-    run_as_postgres "$PGCTL_PATH -D $DATA_DIR -l $PGCTL_LOG_FILE start"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$PGCTL_PATH -D $DATA_DIR -l $PGCTL_LOG_FILE start"
+    else
+        $PGCTL_PATH -D $DATA_DIR -l $PGCTL_LOG_FILE start
+    fi
     
     if ! wait_for_server_ready $POSTGRES_PORT "PostgreSQL"; then
         return 1
@@ -314,12 +322,12 @@ create_master_key() {
     log_info "Creating master key..."
     
     if [[ "$OS" == "FreeBSD" ]]; then
-        if run_as_postgres "test -f ~/.pgagroal/master.key"; then
+        if su - postgres -c "test -f ~/.pgagroal/master.key" 2>/dev/null; then
             log_info "Master key already exists"
             return 0
         fi
-        run_as_postgres "mkdir -p ~/.pgagroal"
-        run_as_postgres "chmod 700 ~/.pgagroal"
+        su - postgres -c "mkdir -p ~/.pgagroal"
+        su - postgres -c "chmod 700 ~/.pgagroal"
     else
         if [ -f "$HOME/.pgagroal/master.key" ]; then
             log_info "Master key already exists"
@@ -329,7 +337,11 @@ create_master_key() {
         chmod 700 ~/.pgagroal
     fi
     
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin master-key -P $PGPASSWORD"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin master-key -P $PGPASSWORD"
+    else
+        $EXECUTABLE_DIR/pgagroal-admin master-key -P $PGPASSWORD
+    fi
     log_success "Master key created"
 }
 
@@ -382,22 +394,35 @@ EOF
         rm -f "$CONFIG_DIR/pgagroal_users.conf"
     fi
     
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add"
+    else
+        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add
+    fi
     
     # Create admin configuration
     if [ -f "$CONFIG_DIR/pgagroal_admins.conf" ]; then
         rm -f "$CONFIG_DIR/pgagroal_admins.conf"
     fi
     
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_admins.conf -U $ADMIN_USER -P $ADMIN_PASSWORD user add"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_admins.conf -U $ADMIN_USER -P $ADMIN_PASSWORD user add"
+    else
+        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_admins.conf -U $ADMIN_USER -P $ADMIN_PASSWORD user add
+    fi
     
     # Create frontend users configuration
     if [ -f "$CONFIG_DIR/pgagroal_frontend_users.conf" ]; then
         rm -f "$CONFIG_DIR/pgagroal_frontend_users.conf"
     fi
     
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $FRONTEND_PASSWORD1 user add"
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $FRONTEND_PASSWORD2 user add"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $FRONTEND_PASSWORD1 user add"
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $FRONTEND_PASSWORD2 user add"
+    else
+        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $FRONTEND_PASSWORD1 user add
+        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $FRONTEND_PASSWORD2 user add
+    fi
     
     if [[ "$OS" == "FreeBSD" ]]; then
         chown -R postgres:postgres "$CONFIG_DIR"
@@ -410,7 +435,11 @@ EOF
 start_pgagroal() {
     log_info "Starting pgagroal..."
     
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
+    else
+        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d
+    fi
     
     if ! wait_for_server_ready $PGAGROAL_PORT "pgagroal"; then
         return 1
@@ -455,7 +484,11 @@ EOF
 start_vault() {
     log_info "Starting pgagroal-vault..."
     
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d"
+    else
+        $EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d
+    fi
     
     if ! wait_for_server_ready $VAULT_PORT "vault"; then
         return 1
@@ -583,19 +616,36 @@ test_vault_help_and_version() {
     
     # Test help
     local help_output
-    if help_output=$(run_as_postgres "$EXECUTABLE_DIR/pgagroal-vault --help" 2>&1); then
-        if [[ "$help_output" == *"pgagroal-vault"* ]]; then
-            log_success "vault help: PASSED"
-            ((TESTS_PASSED++))
+    if [[ "$OS" == "FreeBSD" ]]; then
+        if help_output=$(su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault --help" 2>&1); then
+            if [[ "$help_output" == *"pgagroal-vault"* ]]; then
+                log_success "vault help: PASSED"
+                ((TESTS_PASSED++))
+            else
+                log_error "vault help: Invalid help output"
+                FAILED_TESTS+=("vault help")
+                ((TESTS_FAILED++))
+            fi
         else
-            log_error "vault help: Invalid help output"
+            log_error "vault help: Command failed"
             FAILED_TESTS+=("vault help")
             ((TESTS_FAILED++))
         fi
     else
-        log_error "vault help: Command failed"
-        FAILED_TESTS+=("vault help")
-        ((TESTS_FAILED++))
+        if help_output=$($EXECUTABLE_DIR/pgagroal-vault --help 2>&1); then
+            if [[ "$help_output" == *"pgagroal-vault"* ]]; then
+                log_success "vault help: PASSED"
+                ((TESTS_PASSED++))
+            else
+                log_error "vault help: Invalid help output"
+                FAILED_TESTS+=("vault help")
+                ((TESTS_FAILED++))
+            fi
+        else
+            log_error "vault help: Command failed"
+            FAILED_TESTS+=("vault help")
+            ((TESTS_FAILED++))
+        fi
     fi
 }
 
