@@ -532,20 +532,18 @@ generate_test_report() {
 cleanup() {
     log_info "Cleaning up admin test environment..."
     
-    # Restore master key if we backed it up
-    if [[ -f "$MASTER_KEY_BACKUP" ]]; then
-        if [[ "$OS" == "FreeBSD" ]]; then
-            su - postgres -c "cp $MASTER_KEY_BACKUP ~/.pgagroal/master.key"
-        else
-            cp "$MASTER_KEY_BACKUP" "$HOME/.pgagroal/master.key"
-        fi
-        log_info "Restored original master key"
-    fi
-    
     # Remove test directories
     if [ -d "$ADMIN_TEST_DIR" ]; then
         rm -rf "$ADMIN_TEST_DIR"
         log_info "Removed admin test directory"
+    fi
+    
+    # Clean up master key completely to ensure independence from other tests
+    log_info "Cleaning up master key for test independence"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "rm -rf ~/.pgagroal" || true
+    else
+        rm -rf "$HOME/.pgagroal" || true
     fi
     
     log_success "Admin test cleanup completed"
@@ -620,8 +618,24 @@ main() {
         exit 1
     fi
     
-    # Setup phase
+    # Setup phase - ensure complete independence from other tests
     log_info "Setting up admin test environment..."
+    
+    # Clean up any existing state from previous tests
+    log_info "Ensuring test independence by cleaning up any existing state"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "rm -rf ~/.pgagroal" || true
+    else
+        rm -rf "$HOME/.pgagroal" || true
+    fi
+    
+    # Remove any existing test directories
+    rm -rf "$ADMIN_TEST_DIR" || true
+    
+    # Kill any existing processes that might interfere
+    pkill -f pgagroal-vault || true
+    pkill -f pgagroal || true
+    sleep 2
     
     if ! check_system_requirements; then
         log_error "System requirements check failed"

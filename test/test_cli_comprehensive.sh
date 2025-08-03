@@ -764,6 +764,14 @@ cleanup() {
         log_info "Removed log directory"
     fi
     
+    # Clean up master key to ensure independence from other tests
+    log_info "Cleaning up master key for test independence"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "rm -rf ~/.pgagroal" || true
+    else
+        rm -rf "$HOME/.pgagroal" || true
+    fi
+    
     log_success "Cleanup completed"
 }
 

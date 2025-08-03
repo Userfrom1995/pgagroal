@@ -918,6 +918,14 @@ cleanup() {
         log_info "Removed log directory"
     fi
     
+    # Clean up master key to ensure independence from other tests
+    log_info "Cleaning up master key for test independence"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "rm -rf ~/.pgagroal" || true
+    else
+        rm -rf "$HOME/.pgagroal" || true
+    fi
+    
     log_success "Vault test cleanup completed"
 }
 
@@ -991,8 +999,27 @@ main() {
         fi
     done
     
-    # Setup phase
+    # Setup phase - ensure complete independence from other tests
     log_info "Setting up vault test environment..."
+    
+    # Clean up any existing state from previous tests
+    log_info "Ensuring test independence by cleaning up any existing state"
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "rm -rf ~/.pgagroal" || true
+    else
+        rm -rf "$HOME/.pgagroal" || true
+    fi
+    
+    # Remove any existing test directories
+    rm -rf "$POSTGRES_OPERATION_DIR" || true
+    rm -rf "$VAULT_OPERATION_DIR" || true
+    rm -rf "$LOG_DIR" || true
+    
+    # Kill any existing processes that might interfere
+    pkill -f pgagroal-vault || true
+    pkill -f pgagroal || true
+    pkill -f postgres || true
+    sleep 2
     
     if ! check_system_requirements; then
         log_error "System requirements check failed"
