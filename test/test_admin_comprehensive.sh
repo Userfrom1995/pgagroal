@@ -137,8 +137,8 @@ setup_test_environment() {
     
     # Backup existing master key if it exists
     if [[ "$OS" == "FreeBSD" ]]; then
-        if run_as_postgres "test -f ~/.pgagroal/master.key"; then
-            run_as_postgres "cp ~/.pgagroal/master.key $MASTER_KEY_BACKUP"
+        if su - postgres -c "test -f ~/.pgagroal/master.key" 2>/dev/null; then
+            su - postgres -c "cp ~/.pgagroal/master.key $MASTER_KEY_BACKUP"
             log_info "Backed up existing master key"
         fi
     else
@@ -173,11 +173,29 @@ execute_admin_test() {
         full_command="$EXECUTABLE_DIR/pgagroal-admin $admin_command"
     fi
     
-    # Execute command with timeout
-    if output=$(timeout $TEST_TIMEOUT bash -c "run_as_postgres '$full_command'" 2>&1); then
-        exit_code=0
+    # Execute command with timeout - handle FreeBSD vs other systems
+    if [[ "$OS" == "FreeBSD" ]]; then
+        # For FreeBSD, run as postgres user
+        if output=$(timeout $TEST_TIMEOUT su - postgres -c "$full_command" 2>&1); then
+            exit_code=0
+        else
+            exit_code=$?
+            # Handle timeout exit code (124)
+            if [[ $exit_code -eq 124 ]]; then
+                log_error "$test_name: Command timed out after $TEST_TIMEOUT seconds"
+            fi
+        fi
     else
-        exit_code=$?
+        # For other systems, run directly
+        if output=$(timeout $TEST_TIMEOUT $full_command 2>&1); then
+            exit_code=0
+        else
+            exit_code=$?
+            # Handle timeout exit code (124)
+            if [[ $exit_code -eq 124 ]]; then
+                log_error "$test_name: Command timed out after $TEST_TIMEOUT seconds"
+            fi
+        fi
     fi
     
     # Validate results
@@ -233,7 +251,7 @@ test_master_key_operations() {
     
     # Remove existing master key for clean test
     if [[ "$OS" == "FreeBSD" ]]; then
-        run_as_postgres "rm -f ~/.pgagroal/master.key" || true
+        su - postgres -c "rm -f ~/.pgagroal/master.key" || true
     else
         rm -f "$HOME/.pgagroal/master.key" || true
     fi
@@ -357,8 +375,13 @@ test_format_combinations() {
     log_info "=== Testing FORMAT Combinations ==="
     
     # Ensure we have some users to test with
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin -f $TEST_USERS_FILE -U format_test1 -P password1 user add" || true
-    run_as_postgres "$EXECUTABLE_DIR/pgagroal-admin -f $TEST_USERS_FILE -U format_test2 -P password2 user add" || true
+    if [[ "$OS" == "FreeBSD" ]]; then
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $TEST_USERS_FILE -U format_test1 -P password1 user add" || true
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $TEST_USERS_FILE -U format_test2 -P password2 user add" || true
+    else
+        $EXECUTABLE_DIR/pgagroal-admin -f $TEST_USERS_FILE -U format_test1 -P password1 user add || true
+        $EXECUTABLE_DIR/pgagroal-admin -f $TEST_USERS_FILE -U format_test2 -P password2 user add || true
+    fi
     
     # Test all commands with both formats
     execute_admin_test "user ls text format" "-f $TEST_USERS_FILE user ls --format text" "true" "text"
@@ -405,22 +428,22 @@ run_all_tests() {
     
     # Basic functionality tests
     test_help_and_version
-    # test_master_key_operations
+    test_master_key_operations
     
-    # # User management tests
-    # test_user_management_basic
-    # test_user_management_advanced
-    # test_password_generation
+    # User management tests
+    test_user_management_basic
+    test_user_management_advanced
+    test_password_generation
     
-    # # File and format tests
-    # test_file_operations
-    # test_format_combinations
+    # File and format tests
+    test_file_operations
+    test_format_combinations
     
-    # # Error scenario tests
-    # test_error_scenarios
+    # Error scenario tests
+    test_error_scenarios
     
-    # # Comprehensive workflow test
-    # test_comprehensive_workflow
+    # Comprehensive workflow test
+    test_comprehensive_workflow
     
     set -e
 }
@@ -456,7 +479,7 @@ cleanup() {
     # Restore master key if we backed it up
     if [[ -f "$MASTER_KEY_BACKUP" ]]; then
         if [[ "$OS" == "FreeBSD" ]]; then
-            run_as_postgres "cp $MASTER_KEY_BACKUP ~/.pgagroal/master.key"
+            su - postgres -c "cp $MASTER_KEY_BACKUP ~/.pgagroal/master.key"
         else
             cp "$MASTER_KEY_BACKUP" "$HOME/.pgagroal/master.key"
         fi
