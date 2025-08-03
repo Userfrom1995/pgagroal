@@ -508,22 +508,19 @@ start_pgagroal() {
     
     log_debug "Executing pgagroal command: $pgagroal_command"
     
-    # Start pgagroal in daemon mode (should return immediately)
-    log_debug "Starting pgagroal daemon..."
+    # Start pgagroal in background (like other test scripts do)
+    log_debug "Starting pgagroal in background..."
     
     if [[ "$OS" == "FreeBSD" ]]; then
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d" &
     else
-        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d
+        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d &
     fi
     
-    local pgagroal_exit_code=$?
-    if [[ $pgagroal_exit_code -ne 0 ]]; then
-        log_error "pgagroal daemon failed to start with exit code: $pgagroal_exit_code"
-        return 1
-    fi
+    # Give pgagroal a moment to start
+    sleep 2
     
-    log_debug "pgagroal daemon command returned successfully"
+    log_debug "pgagroal started in background"
     
     # Give pgagroal a moment to start up
     sleep 3
@@ -604,21 +601,18 @@ EOF
 start_vault() {
     log_info "Starting pgagroal-vault..."
     
-    log_debug "Starting pgagroal-vault daemon..."
+    log_debug "Starting pgagroal-vault in background..."
     
     if [[ "$OS" == "FreeBSD" ]]; then
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d"
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d" &
     else
-        $EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d
+        $EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d &
     fi
     
-    local vault_exit_code=$?
-    if [[ $vault_exit_code -ne 0 ]]; then
-        log_error "pgagroal-vault daemon failed to start with exit code: $vault_exit_code"
-        return 1
-    fi
+    # Give pgagroal-vault a moment to start
+    sleep 2
     
-    log_debug "pgagroal-vault daemon command returned successfully"
+    log_debug "pgagroal-vault started in background"
     
     if ! wait_for_server_ready $VAULT_PORT "vault"; then
         log_error "pgagroal-vault did not become ready on port $VAULT_PORT"
