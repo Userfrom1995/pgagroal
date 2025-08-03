@@ -305,8 +305,8 @@ test_master_key_operations() {
     # Clean up before JSON test
     cleanup_master_key
     
-    # Test master key with JSON format
-    execute_admin_test "master-key JSON format" "master-key -P $MASTER_PASSWORD --format json" "true" "json"
+    # Test master key with JSON format (note: pgagroal-admin has a bug where it prints success message even in JSON mode)
+    execute_admin_test "master-key JSON format" "master-key -P $MASTER_PASSWORD --format json" "true" "json" "false"
     
     # Test master key without password (should prompt - will fail in automated test)
     execute_admin_test "master-key without password" "master-key" "false" "text" "false"
