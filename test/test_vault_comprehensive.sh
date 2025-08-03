@@ -508,34 +508,84 @@ start_pgagroal() {
     
     log_debug "Executing pgagroal command: $pgagroal_command"
     
-    # Execute the command and capture output
+    # Execute the command with timeout to prevent hanging
     local pgagroal_output
+    local pgagroal_exit_code
+    
+    log_debug "Starting pgagroal with 30 second timeout..."
+    
     if [[ "$OS" == "FreeBSD" ]]; then
-        if pgagroal_output=$(su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d" 2>&1); then
-            log_debug "pgagroal started successfully"
+        if pgagroal_output=$(timeout 30 su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d" 2>&1); then
+            pgagroal_exit_code=0
+            log_debug "pgagroal command completed successfully"
         else
-            log_error "pgagroal failed to start"
+            pgagroal_exit_code=$?
+            if [[ $pgagroal_exit_code -eq 124 ]]; then
+                log_error "pgagroal startup timed out after 30 seconds"
+                log_error "This suggests pgagroal is hanging during startup"
+            else
+                log_error "pgagroal failed to start with exit code: $pgagroal_exit_code"
+            fi
             log_error "pgagroal output: $pgagroal_output"
             return 1
         fi
     else
-        if pgagroal_output=$($EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d 2>&1); then
-            log_debug "pgagroal started successfully"
+        if pgagroal_output=$(timeout 30 $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d 2>&1); then
+            pgagroal_exit_code=0
+            log_debug "pgagroal command completed successfully"
         else
-            log_error "pgagroal failed to start"
+            pgagroal_exit_code=$?
+            if [[ $pgagroal_exit_code -eq 124 ]]; then
+                log_error "pgagroal startup timed out after 30 seconds"
+                log_error "This suggests pgagroal is hanging during startup"
+                log_error "Possible causes: waiting for input, deadlock, or infinite loop"
+            else
+                log_error "pgagroal failed to start with exit code: $pgagroal_exit_code"
+            fi
             log_error "pgagroal output: $pgagroal_output"
             return 1
         fi
     fi
     
+    log_debug "pgagroal output: $pgagroal_output"
+    
+    # Give pgagroal a moment to start up
+    sleep 3
+    
+    # Check if pgagroal process is running
+    if pgrep -f "pgagroal.*$CONFIG_DIR" > /dev/null; then
+        log_debug "pgagroal process is running"
+    else
+        log_error "pgagroal process is not running after startup command"
+        return 1
+    fi
+    
     if ! wait_for_server_ready $PGAGROAL_PORT "pgagroal"; then
         log_error "pgagroal did not become ready on port $PGAGROAL_PORT"
+        
+        # Check if process is still running
+        if pgrep -f "pgagroal.*$CONFIG_DIR" > /dev/null; then
+            log_error "pgagroal process is running but not accepting connections"
+        else
+            log_error "pgagroal process has died"
+        fi
+        
         # Try to get more information from log file
         if [[ -f "$PGAGROAL_LOG_FILE" ]]; then
             log_error "=== pgagroal log file contents ==="
-            tail -20 "$PGAGROAL_LOG_FILE" || log_error "Could not read pgagroal log file"
+            tail -50 "$PGAGROAL_LOG_FILE" || log_error "Could not read pgagroal log file"
             log_error "=== End pgagroal log file ==="
+        else
+            log_error "pgagroal log file does not exist: $PGAGROAL_LOG_FILE"
         fi
+        
+        # Show any core dumps or system messages
+        if [[ -f "/var/log/syslog" ]]; then
+            log_error "=== Recent syslog entries ==="
+            tail -10 /var/log/syslog | grep -i pgagroal || log_error "No pgagroal entries in syslog"
+            log_error "=== End syslog entries ==="
+        fi
+        
         return 1
     fi
     
