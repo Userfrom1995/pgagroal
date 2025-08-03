@@ -122,6 +122,23 @@ file(
     "${CMAKE_SOURCE_DIR}/test/conf"
     DESTINATION "${CMAKE_BINARY_DIR}/"
 )
+
+# Copy CLI comprehensive test script to build directory
+configure_file(
+  "${CMAKE_SOURCE_DIR}/test/test_cli_comprehensive.sh"
+  "${CMAKE_BINARY_DIR}/test_cli_comprehensive.sh"
+  COPYONLY
+)
+
+# # Make CLI test script executable on Unix systems
+# if(UNIX)
+#   file(COPY "${CMAKE_SOURCE_DIR}/test/cli-comprehensive/test_cli_comprehensive.sh"
+#        DESTINATION "${CMAKE_BINARY_DIR}/"
+#        FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+#                        GROUP_READ GROUP_EXECUTE
+#                        WORLD_READ WORLD_EXECUTE)
+# endif()
+
 configure_file(
   "${CMAKE_SOURCE_DIR}/test/check.sh"
   "${CMAKE_BINARY_DIR}/check.sh"
