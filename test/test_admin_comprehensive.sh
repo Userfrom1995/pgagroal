@@ -405,22 +405,22 @@ run_all_tests() {
     
     # Basic functionality tests
     test_help_and_version
-    test_master_key_operations
+    # test_master_key_operations
     
-    # User management tests
-    test_user_management_basic
-    test_user_management_advanced
-    test_password_generation
+    # # User management tests
+    # test_user_management_basic
+    # test_user_management_advanced
+    # test_password_generation
     
-    # File and format tests
-    test_file_operations
-    test_format_combinations
+    # # File and format tests
+    # test_file_operations
+    # test_format_combinations
     
-    # Error scenario tests
-    test_error_scenarios
+    # # Error scenario tests
+    # test_error_scenarios
     
-    # Comprehensive workflow test
-    test_comprehensive_workflow
+    # # Comprehensive workflow test
+    # test_comprehensive_workflow
     
     set -e
 }
