@@ -351,6 +351,7 @@ create_pgagroal_configuration() {
     mkdir -p "$CONFIG_DIR"
     
     # Main configuration with frontend password rotation enabled
+    log_debug "Creating main pgagroal configuration at $CONFIG_DIR/pgagroal.conf"
     cat > "$CONFIG_DIR/pgagroal.conf" << EOF
 [pgagroal]
 host = localhost
@@ -358,7 +359,7 @@ port = $PGAGROAL_PORT
 management = $MANAGEMENT_PORT
 
 log_type = file
-log_level = info
+log_level = debug5
 log_path = $PGAGROAL_LOG_FILE
 
 max_connections = 100
@@ -416,13 +417,43 @@ EOF
         rm -f "$CONFIG_DIR/pgagroal_frontend_users.conf"
     fi
     
+    # Frontend passwords must be 8-1024 characters long
+    local frontend_pass1="frontend_password_123"  # 20 chars
+    local frontend_pass2="frontend_password_456"  # 20 chars
+    
+    log_debug "Creating frontend users with passwords of length ${#frontend_pass1} and ${#frontend_pass2}"
+    
     if [[ "$OS" == "FreeBSD" ]]; then
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $FRONTEND_PASSWORD1 user add"
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $FRONTEND_PASSWORD2 user add"
+        if su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $frontend_pass1 user add" 2>&1; then
+            log_debug "Frontend user $FRONTEND_USER1 created successfully"
+        else
+            log_error "Failed to create frontend user $FRONTEND_USER1"
+            return 1
+        fi
+        if su - postgres -c "$EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $frontend_pass2 user add" 2>&1; then
+            log_debug "Frontend user $FRONTEND_USER2 created successfully"
+        else
+            log_error "Failed to create frontend user $FRONTEND_USER2"
+            return 1
+        fi
     else
-        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $FRONTEND_PASSWORD1 user add
-        $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $FRONTEND_PASSWORD2 user add
+        if $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER1 -P $frontend_pass1 user add 2>&1; then
+            log_debug "Frontend user $FRONTEND_USER1 created successfully"
+        else
+            log_error "Failed to create frontend user $FRONTEND_USER1"
+            return 1
+        fi
+        if $EXECUTABLE_DIR/pgagroal-admin -f $CONFIG_DIR/pgagroal_frontend_users.conf -U $FRONTEND_USER2 -P $frontend_pass2 user add 2>&1; then
+            log_debug "Frontend user $FRONTEND_USER2 created successfully"
+        else
+            log_error "Failed to create frontend user $FRONTEND_USER2"
+            return 1
+        fi
     fi
+    
+    # Update the global variables for use in tests
+    FRONTEND_PASSWORD1="$frontend_pass1"
+    FRONTEND_PASSWORD2="$frontend_pass2"
     
     if [[ "$OS" == "FreeBSD" ]]; then
         chown -R postgres:postgres "$CONFIG_DIR"
@@ -435,13 +466,61 @@ EOF
 start_pgagroal() {
     log_info "Starting pgagroal..."
     
+    # Debug: Show configuration files before starting
+    log_debug "Configuration files:"
+    log_debug "Main config: $CONFIG_DIR/pgagroal.conf"
+    log_debug "HBA config: $CONFIG_DIR/pgagroal_hba.conf"
+    log_debug "Users config: $CONFIG_DIR/pgagroal_users.conf"
+    log_debug "Databases config: $CONFIG_DIR/pgagroal_databases.conf"
+    log_debug "Admins config: $CONFIG_DIR/pgagroal_admins.conf"
+    log_debug "Frontend users config: $CONFIG_DIR/pgagroal_frontend_users.conf"
+    
+    # Debug: Show contents of configuration files
+    if [[ "${DEBUG:-false}" == "true" ]]; then
+        log_debug "=== pgagroal.conf contents ==="
+        cat "$CONFIG_DIR/pgagroal.conf" || log_error "Could not read pgagroal.conf"
+        log_debug "=== pgagroal_frontend_users.conf contents ==="
+        cat "$CONFIG_DIR/pgagroal_frontend_users.conf" || log_error "Could not read pgagroal_frontend_users.conf"
+        log_debug "=== End configuration files ==="
+    fi
+    
+    local pgagroal_command
     if [[ "$OS" == "FreeBSD" ]]; then
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
+        pgagroal_command="su - postgres -c \"$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d\""
     else
-        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d
+        pgagroal_command="$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
+    fi
+    
+    log_debug "Executing pgagroal command: $pgagroal_command"
+    
+    # Execute the command and capture output
+    local pgagroal_output
+    if [[ "$OS" == "FreeBSD" ]]; then
+        if pgagroal_output=$(su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d" 2>&1); then
+            log_debug "pgagroal started successfully"
+        else
+            log_error "pgagroal failed to start"
+            log_error "pgagroal output: $pgagroal_output"
+            return 1
+        fi
+    else
+        if pgagroal_output=$($EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d 2>&1); then
+            log_debug "pgagroal started successfully"
+        else
+            log_error "pgagroal failed to start"
+            log_error "pgagroal output: $pgagroal_output"
+            return 1
+        fi
     fi
     
     if ! wait_for_server_ready $PGAGROAL_PORT "pgagroal"; then
+        log_error "pgagroal did not become ready on port $PGAGROAL_PORT"
+        # Try to get more information from log file
+        if [[ -f "$PGAGROAL_LOG_FILE" ]]; then
+            log_error "=== pgagroal log file contents ==="
+            tail -20 "$PGAGROAL_LOG_FILE" || log_error "Could not read pgagroal log file"
+            log_error "=== End pgagroal log file ==="
+        fi
         return 1
     fi
     
