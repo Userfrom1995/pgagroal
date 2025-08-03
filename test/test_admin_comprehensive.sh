@@ -378,9 +378,9 @@ test_file_operations() {
     # Test with different file paths
     execute_admin_test "user add different file" "-f $TEST_USERS_FILE_2 -U $TEST_USER1 -P $TEST_PASSWORD1 user add" "true" "text"
     
-    # Test with non-existent directory (should create)
+    # Test with non-existent directory (pgagroal-admin does not create directories, should fail)
     local nonexistent_file="$CONFIG_DIR/subdir/users.conf"
-    execute_admin_test "user add create directory" "-f $nonexistent_file -U $TEST_USER1 -P $TEST_PASSWORD1 user add" "true" "text"
+    execute_admin_test "user add non-existent directory" "-f $nonexistent_file -U $TEST_USER1 -P $TEST_PASSWORD1 user add" "false" "text"
     
     # Test with invalid file path (should fail)
     execute_admin_test "user add invalid path" "-f /invalid/path/users.conf -U $TEST_USER1 -P $TEST_PASSWORD1 user add" "false" "text" "false"
