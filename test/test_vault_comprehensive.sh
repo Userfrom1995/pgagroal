@@ -508,46 +508,22 @@ start_pgagroal() {
     
     log_debug "Executing pgagroal command: $pgagroal_command"
     
-    # Execute the command with timeout to prevent hanging
-    local pgagroal_output
-    local pgagroal_exit_code
-    
-    log_debug "Starting pgagroal with 30 second timeout..."
+    # Start pgagroal in daemon mode (should return immediately)
+    log_debug "Starting pgagroal daemon..."
     
     if [[ "$OS" == "FreeBSD" ]]; then
-        if pgagroal_output=$(timeout 30 su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d" 2>&1); then
-            pgagroal_exit_code=0
-            log_debug "pgagroal command completed successfully"
-        else
-            pgagroal_exit_code=$?
-            if [[ $pgagroal_exit_code -eq 124 ]]; then
-                log_error "pgagroal startup timed out after 30 seconds"
-                log_error "This suggests pgagroal is hanging during startup"
-            else
-                log_error "pgagroal failed to start with exit code: $pgagroal_exit_code"
-            fi
-            log_error "pgagroal output: $pgagroal_output"
-            return 1
-        fi
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
     else
-        if pgagroal_output=$(timeout 30 $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d 2>&1); then
-            pgagroal_exit_code=0
-            log_debug "pgagroal command completed successfully"
-        else
-            pgagroal_exit_code=$?
-            if [[ $pgagroal_exit_code -eq 124 ]]; then
-                log_error "pgagroal startup timed out after 30 seconds"
-                log_error "This suggests pgagroal is hanging during startup"
-                log_error "Possible causes: waiting for input, deadlock, or infinite loop"
-            else
-                log_error "pgagroal failed to start with exit code: $pgagroal_exit_code"
-            fi
-            log_error "pgagroal output: $pgagroal_output"
-            return 1
-        fi
+        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d
     fi
     
-    log_debug "pgagroal output: $pgagroal_output"
+    local pgagroal_exit_code=$?
+    if [[ $pgagroal_exit_code -ne 0 ]]; then
+        log_error "pgagroal daemon failed to start with exit code: $pgagroal_exit_code"
+        return 1
+    fi
+    
+    log_debug "pgagroal daemon command returned successfully"
     
     # Give pgagroal a moment to start up
     sleep 3
@@ -628,13 +604,24 @@ EOF
 start_vault() {
     log_info "Starting pgagroal-vault..."
     
+    log_debug "Starting pgagroal-vault daemon..."
+    
     if [[ "$OS" == "FreeBSD" ]]; then
         su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d"
     else
         $EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d
     fi
     
+    local vault_exit_code=$?
+    if [[ $vault_exit_code -ne 0 ]]; then
+        log_error "pgagroal-vault daemon failed to start with exit code: $vault_exit_code"
+        return 1
+    fi
+    
+    log_debug "pgagroal-vault daemon command returned successfully"
+    
     if ! wait_for_server_ready $VAULT_PORT "vault"; then
+        log_error "pgagroal-vault did not become ready on port $VAULT_PORT"
         return 1
     fi
     
@@ -796,18 +783,44 @@ test_vault_help_and_version() {
 test_valid_user_requests() {
     log_info "=== Testing Valid User Requests ==="
     
-    # Test valid frontend users
-    execute_vault_test "GET valid user 1" "GET" "/users/$FRONTEND_USER1" "200" "true" "$FRONTEND_PASSWORD1"
-    execute_vault_test "GET valid user 2" "GET" "/users/$FRONTEND_USER2" "200" "true" "$FRONTEND_PASSWORD2"
+    # Test valid frontend users - vault should return their current passwords
+    log_info "Testing GET requests for valid frontend users"
+    execute_vault_test "GET valid user 1" "GET" "/users/$FRONTEND_USER1" "200" "true" "frontend_password_123"
+    execute_vault_test "GET valid user 2" "GET" "/users/$FRONTEND_USER2" "200" "true" "frontend_password_456"
+    
+    # Test with curl -i to verify complete HTTP response format
+    log_info "Testing complete HTTP response format with headers"
+    local response_with_headers
+    if response_with_headers=$(curl -i -s "http://localhost:$VAULT_PORT/users/$FRONTEND_USER1" 2>&1); then
+        if [[ "$response_with_headers" == *"HTTP/1.1 200 OK"* ]] && [[ "$response_with_headers" == *"Content-Type: text/plain"* ]]; then
+            log_success "HTTP response format validation: PASSED"
+            ((TESTS_PASSED++))
+        else
+            log_error "HTTP response format validation: Invalid response format"
+            log_error "Response: $response_with_headers"
+            FAILED_TESTS+=("HTTP response format validation")
+            ((TESTS_FAILED++))
+        fi
+    else
+        log_error "HTTP response format validation: Failed to get response"
+        FAILED_TESTS+=("HTTP response format validation")
+        ((TESTS_FAILED++))
+    fi
 }
 
 test_invalid_user_requests() {
     log_info "=== Testing Invalid User Requests ==="
     
-    # Test non-existent users
+    # Test non-existent users (should return 404)
     execute_vault_test "GET non-existent user" "GET" "/users/nonexistent_user" "404"
     execute_vault_test "GET empty username" "GET" "/users/" "404"
     execute_vault_test "GET user with special chars" "GET" "/users/user@domain.com" "404"
+    execute_vault_test "GET user with spaces" "GET" "/users/user%20with%20spaces" "404"
+    execute_vault_test "GET very long username" "GET" "/users/$(printf 'a%.0s' {1..200})" "404"
+    
+    # Test users that exist in regular users but not in frontend users
+    # (vault only serves frontend users, not regular users)
+    execute_vault_test "GET regular user (not frontend)" "GET" "/users/runner" "404"
 }
 
 test_invalid_endpoints() {
