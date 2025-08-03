@@ -404,8 +404,8 @@ test_error_scenarios() {
     # Test user operations without username
     execute_admin_test "user add without username" "-f $TEST_USERS_FILE -P $TEST_PASSWORD1 user add" "false" "text" "false"
     
-    # Test user operations without password (when not generating)
-    execute_admin_test "user add without password" "-f $TEST_USERS_FILE -U $TEST_USER1 user add" "false" "text" "false"
+    # Test user operations without password (pgagroal-admin prompts and accepts empty password in non-interactive mode)
+    execute_admin_test "user add without password" "-f $TEST_USERS_FILE -U $TEST_USER1 user add" "true" "text"
     
     # Test delete non-existent user
     execute_admin_test "delete non-existent user" "-f $TEST_USERS_FILE -U nonexistent_user user del" "false" "text" "false"
