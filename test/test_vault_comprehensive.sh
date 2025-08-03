@@ -499,65 +499,55 @@ start_pgagroal() {
         log_debug "=== End configuration files ==="
     fi
     
-    local pgagroal_command
-    if [[ "$OS" == "FreeBSD" ]]; then
-        pgagroal_command="su - postgres -c \"$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d\""
-    else
-        pgagroal_command="$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
-    fi
-    
-    log_debug "Executing pgagroal command: $pgagroal_command"
-    
-    # Start pgagroal in background (like other test scripts do)
-    log_debug "Starting pgagroal in background..."
+    # Use the EXACT same approach as CLI test (which works)
+    log_debug "Starting pgagroal using CLI test approach..."
     
     if [[ "$OS" == "FreeBSD" ]]; then
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d" &
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d"
     else
-        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d &
-    fi
-    
-    # Give pgagroal a moment to start
-    sleep 2
-    
-    log_debug "pgagroal started in background"
-    
-    # Give pgagroal a moment to start up
-    sleep 3
-    
-    # Check if pgagroal process is running
-    if pgrep -f "pgagroal.*$CONFIG_DIR" > /dev/null; then
-        log_debug "pgagroal process is running"
-    else
-        log_error "pgagroal process is not running after startup command"
-        return 1
+        $EXECUTABLE_DIR/pgagroal -c $CONFIG_DIR/pgagroal.conf -a $CONFIG_DIR/pgagroal_hba.conf -u $CONFIG_DIR/pgagroal_users.conf -l $CONFIG_DIR/pgagroal_databases.conf -A $CONFIG_DIR/pgagroal_admins.conf -F $CONFIG_DIR/pgagroal_frontend_users.conf -d
     fi
     
     if ! wait_for_server_ready $PGAGROAL_PORT "pgagroal"; then
         log_error "pgagroal did not become ready on port $PGAGROAL_PORT"
         
-        # Check if process is still running
+        # Print detailed logs on failure
+        log_error "=== PGAGROAL STARTUP FAILURE DIAGNOSTICS ==="
+        
+        # Check if process is running
         if pgrep -f "pgagroal.*$CONFIG_DIR" > /dev/null; then
             log_error "pgagroal process is running but not accepting connections"
         else
-            log_error "pgagroal process has died"
+            log_error "pgagroal process is not running (startup failed)"
         fi
         
-        # Try to get more information from log file
+        # Show pgagroal log file contents
         if [[ -f "$PGAGROAL_LOG_FILE" ]]; then
             log_error "=== pgagroal log file contents ==="
-            tail -50 "$PGAGROAL_LOG_FILE" || log_error "Could not read pgagroal log file"
+            cat "$PGAGROAL_LOG_FILE" || log_error "Could not read pgagroal log file"
             log_error "=== End pgagroal log file ==="
         else
             log_error "pgagroal log file does not exist: $PGAGROAL_LOG_FILE"
         fi
         
-        # Show any core dumps or system messages
+        # Show system logs
         if [[ -f "/var/log/syslog" ]]; then
             log_error "=== Recent syslog entries ==="
-            tail -10 /var/log/syslog | grep -i pgagroal || log_error "No pgagroal entries in syslog"
+            tail -20 /var/log/syslog | grep -i pgagroal || log_error "No pgagroal entries in syslog"
             log_error "=== End syslog entries ==="
         fi
+        
+        # Show process information
+        log_error "=== Process information ==="
+        ps aux | grep pgagroal || log_error "No pgagroal processes found"
+        log_error "=== End process information ==="
+        
+        # Show port information
+        log_error "=== Port information ==="
+        netstat -tlnp | grep $PGAGROAL_PORT || log_error "Port $PGAGROAL_PORT not in use"
+        log_error "=== End port information ==="
+        
+        log_error "=== END PGAGROAL STARTUP FAILURE DIAGNOSTICS ==="
         
         return 1
     fi
@@ -601,21 +591,72 @@ EOF
 start_vault() {
     log_info "Starting pgagroal-vault..."
     
-    log_debug "Starting pgagroal-vault in background..."
+    # Use the same approach as pgagroal startup (which should work)
+    log_debug "Starting pgagroal-vault using same approach as pgagroal..."
     
     if [[ "$OS" == "FreeBSD" ]]; then
-        su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d" &
+        su - postgres -c "$EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d"
     else
-        $EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d &
+        $EXECUTABLE_DIR/pgagroal-vault -c $CONFIG_DIR/pgagroal_vault.conf -u $CONFIG_DIR/pgagroal_vault_users.conf -d
     fi
-    
-    # Give pgagroal-vault a moment to start
-    sleep 2
-    
-    log_debug "pgagroal-vault started in background"
     
     if ! wait_for_server_ready $VAULT_PORT "vault"; then
         log_error "pgagroal-vault did not become ready on port $VAULT_PORT"
+        
+        # Print detailed logs on failure
+        log_error "=== PGAGROAL-VAULT STARTUP FAILURE DIAGNOSTICS ==="
+        
+        # Check if process is running
+        if pgrep -f "pgagroal-vault.*$CONFIG_DIR" > /dev/null; then
+            log_error "pgagroal-vault process is running but not accepting connections"
+        else
+            log_error "pgagroal-vault process is not running (startup failed)"
+        fi
+        
+        # Show vault log file contents
+        if [[ -f "$VAULT_LOG_FILE" ]]; then
+            log_error "=== pgagroal-vault log file contents ==="
+            cat "$VAULT_LOG_FILE" || log_error "Could not read pgagroal-vault log file"
+            log_error "=== End pgagroal-vault log file ==="
+        else
+            log_error "pgagroal-vault log file does not exist: $VAULT_LOG_FILE"
+        fi
+        
+        # Show pgagroal log file (vault connects to pgagroal)
+        if [[ -f "$PGAGROAL_LOG_FILE" ]]; then
+            log_error "=== pgagroal log file contents (vault dependency) ==="
+            tail -50 "$PGAGROAL_LOG_FILE" || log_error "Could not read pgagroal log file"
+            log_error "=== End pgagroal log file ==="
+        fi
+        
+        # Show system logs
+        if [[ -f "/var/log/syslog" ]]; then
+            log_error "=== Recent syslog entries ==="
+            tail -20 /var/log/syslog | grep -i "pgagroal\|vault" || log_error "No pgagroal/vault entries in syslog"
+            log_error "=== End syslog entries ==="
+        fi
+        
+        # Show process information
+        log_error "=== Process information ==="
+        ps aux | grep -E "pgagroal|vault" || log_error "No pgagroal/vault processes found"
+        log_error "=== End process information ==="
+        
+        # Show port information
+        log_error "=== Port information ==="
+        netstat -tlnp | grep -E "$VAULT_PORT|$PGAGROAL_PORT|$MANAGEMENT_PORT" || log_error "Relevant ports not in use"
+        log_error "=== End port information ==="
+        
+        # Test connection to pgagroal management port (vault dependency)
+        log_error "=== Testing vault dependencies ==="
+        if curl -s --connect-timeout 5 "http://localhost:$MANAGEMENT_PORT" >/dev/null 2>&1; then
+            log_error "pgagroal management port $MANAGEMENT_PORT is accessible"
+        else
+            log_error "pgagroal management port $MANAGEMENT_PORT is NOT accessible (vault dependency failed)"
+        fi
+        log_error "=== End dependency testing ==="
+        
+        log_error "=== END PGAGROAL-VAULT STARTUP FAILURE DIAGNOSTICS ==="
+        
         return 1
     fi
     
