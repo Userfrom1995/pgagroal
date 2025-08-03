@@ -102,6 +102,12 @@ jobs:
         run: |
           chmod +x ./test/test_cli_comprehensive.sh
           ./test/test_cli_comprehensive.sh
+        working-directory: /home/runner/work/pgagroal/pgagroal/
+
+      - name: Run Admin comprehensive test
+        run: |
+          chmod +x ./test/test_admin_comprehensive.sh
+          ./test/test_admin_comprehensive.sh
         working-directory: /home/runner/work/pgagroal/pgagroal/  
 
 # === Generate coverage reports ===
