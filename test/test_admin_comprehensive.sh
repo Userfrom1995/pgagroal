@@ -266,10 +266,10 @@ execute_admin_test() {
 test_help_and_version() {
     log_info "=== Testing HELP and VERSION Commands ==="
     
-    execute_admin_test "help command" "--help" "true" "text" "false"
-    execute_admin_test "version command" "--version" "true" "text" "false"
-    execute_admin_test "version short flag" "-V" "true" "text" "false"
-    execute_admin_test "help short flag" "-?" "true" "text" "false"
+    execute_admin_test "help command" "--help" "false" "text" "false"
+    execute_admin_test "version command" "--version" "false" "text" "false"
+    execute_admin_test "version short flag" "-V" "false" "text" "false"
+    execute_admin_test "help short flag" "-?" "false" "text" "false"
 }
 
 test_master_key_operations() {
