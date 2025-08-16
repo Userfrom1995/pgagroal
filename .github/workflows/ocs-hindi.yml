@@ -1,4 +1,4 @@
-name: Build Hindi Documentation PDFs
+name: Build Hindi Documentation
 
 on:
   push:
@@ -31,23 +31,14 @@ jobs:
             sleep 5
           done
 
-      - name: test LibreTranslate Docker container
+      - name: Test LibreTranslate
         run: |
           curl -X POST http://localhost:5000/translate -d q="Hello" -d source=en -d target=es
 
-      
-      
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl pandoc texlive-latex-base texlive-fonts-recommended texlive-fonts-extra texlive-latex-extra wget unzip
-
-      - name: Download Eisvogel template
-        run: |
-          wget https://github.com/Wandmalfarbe/pandoc-latex-template/releases/download/v3.2.0/Eisvogel-3.2.0.tar.gz
-          tar -xzf Eisvogel-3.2.0.tar.gz
-          mkdir -p ~/.local/share/pandoc/templates
-          cp Eisvogel-3.2.0/eisvogel.latex ~/.local/share/pandoc/templates/
+          sudo apt-get install -y jq curl
 
       - name: Translate Markdown files to Hindi
         run: |
@@ -91,26 +82,8 @@ jobs:
 
           echo "Translation complete. All translated files are in $DST_DIR"
 
-      - name: Build Hindi User Guide PDF
-        run: |
-          mkdir -p build
-          pandoc -o build/pgagroal-user-guide-hi.pdf --from markdown --template eisvogel --listings -N --toc \
-            document_hindi/manual/user-00-head.md \
-            document_hindi/manual/user-01-*.md \
-            document_hindi/manual/user-10-*.md
-
-      - name: Build Hindi Developer Guide PDF
-        run: |
-          pandoc -o build/pgagroal-dev-guide-hi.pdf --from markdown --template eisvogel --listings -N --toc \
-            document_hindi/manual/dev-??-*.md
-
-      - name: Build Hindi Advanced Guide PDF
-        run: |
-          pandoc -o build/pgagroal-advanced-hi.pdf --from markdown --template eisvogel --listings -N --toc \
-            document_hindi/manual/advanced/??-*.md
-
-      - name: Upload Hindi PDFs as artifacts
+      - name: Upload Hindi docs as artifact
         uses: actions/upload-artifact@v4
         with:
           name: hindi-docs
-          path: build/pgagroal-*-hi.pdf
+          path: document_hindi/
