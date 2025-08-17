@@ -206,6 +206,12 @@ transaction_client(struct io_watcher* watcher)
    /* We can't use the information from wi except from client_fd/client_ssl */
    if (slot == -1)
    {
+      
+      // next_client_message = 0;
+      // next_server_message = 0;
+      // in_tx = false;
+      // deallocate = false;
+
       pgagroal_tracking_event_basic(TRACKER_TX_GET_CONNECTION, &username[0], &database[0]);
       if (pgagroal_get_connection(&username[0], &database[0], true, true, &slot, &s_ssl))
       {
@@ -283,8 +289,9 @@ transaction_client(struct io_watcher* watcher)
             }
             else
             {
-               offset = MIN(next_client_message, msg->length);
-               next_client_message -= offset;
+            int chunk = MIN(next_client_message, msg->length - offset);
+            offset += chunk;
+            next_client_message -= chunk;
             }
          }
 
@@ -445,8 +452,9 @@ transaction_server(struct io_watcher* watcher)
          }
          else
          {
-            offset = MIN(next_server_message, msg->length);
-            next_server_message -= offset;
+               int chunk = MIN(next_server_message, msg->length - offset);
+               offset += chunk;
+               next_server_message -= chunk;
          }
       }
 
@@ -484,6 +492,14 @@ transaction_server(struct io_watcher* watcher)
             }
 
             slot = -1;
+
+            next_client_message = 0;
+            next_server_message = 0;
+            in_tx = false;
+            deallocate = false;
+
+            wi->server_fd = -1;
+            wi->server_ssl = NULL;
          }
       }
       else
@@ -506,7 +522,7 @@ transaction_server(struct io_watcher* watcher)
       goto server_error;
    }
 
-   pgagroal_event_loop_break();
+   // pgagroal_event_loop_break();
    return;
 
 client_error:
