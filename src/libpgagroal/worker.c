@@ -182,7 +182,6 @@ pgagroal_worker(int client_fd, char* address, char** argv)
       }
 
       pgagroal_event_loop_run();
-      pgagroal_event_loop_destroy();
 
       if (config->pipeline == PIPELINE_TRANSACTION)
       {
@@ -191,6 +190,15 @@ pgagroal_worker(int client_fd, char* address, char** argv)
       }
 
       pgagroal_prometheus_client_active_sub();
+
+      if (started)
+      {
+         pgagroal_io_stop(&client_io.io);
+         p.stop(loop, &client_io);
+         pgagroal_event_loop_destroy();
+         loop = NULL;
+         pgagroal_prometheus_session_time(difftime(time(NULL), start_time));
+      }
    }
    else
    {
@@ -217,12 +225,6 @@ pgagroal_worker(int client_fd, char* address, char** argv)
    /* Return to pool */
    if (slot != -1)
    {
-      if (started)
-      {
-         p.stop(loop, &client_io);
-         pgagroal_prometheus_session_time(difftime(time(NULL), start_time));
-      }
-
       if ((auth_status == AUTH_SUCCESS || auth_status == AUTH_BAD_PASSWORD) &&
           (exit_code == WORKER_SUCCESS || exit_code == WORKER_CLIENT_FAILURE ||
            (exit_code == WORKER_FAILURE && config->connections[slot].has_security != SECURITY_INVALID)))
