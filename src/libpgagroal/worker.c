@@ -182,6 +182,7 @@ pgagroal_worker(int client_fd, char* address, char** argv)
       }
 
       pgagroal_event_loop_run();
+      pgagroal_event_loop_destroy();
 
       if (config->pipeline == PIPELINE_TRANSACTION)
       {
@@ -302,7 +303,7 @@ pgagroal_worker(int client_fd, char* address, char** argv)
    pgagroal_pool_status();
    pgagroal_log_debug("After client: PID %d Slot %d (%d)", getpid(), slot, exit_code);
 
-   pgagroal_event_loop_destroy();
+   //pgagroal_event_loop_destroy();
    free(address);
 
    pgagroal_tracking_event_basic(TRACKER_CLIENT_STOP, NULL, NULL);
