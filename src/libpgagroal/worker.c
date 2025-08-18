@@ -221,7 +221,7 @@ pgagroal_worker(int client_fd, char* address, char** argv)
 
       if (started)
       {
-         pgagroal_io_stop(&client_io.io);
+         // pgagroal_io_stop(&client_io.io);
          p.stop(loop, &client_io);
          pgagroal_prometheus_session_time(difftime(time(NULL), start_time));
       }
