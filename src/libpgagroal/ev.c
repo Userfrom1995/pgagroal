@@ -779,10 +779,83 @@ ev_io_uring_fork(void)
    return 0;
 }
 
+// static int
+// ev_io_uring_handler(struct io_uring_cqe* cqe)
+// {
+//    int rc = 0;
+//    event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
+//    struct io_watcher* io;
+//    struct periodic_watcher* per;
+//    struct message* msg = pgagroal_memory_message();
+
+// #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+//    loop->bid = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
+// #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
+//    /* Cancelled requests will trigger the handler, but have NULL data. */
+//    if (!watcher)
+//    {
+//       rc = cqe->res;
+//       if (rc == -ENOENT || rc == -EINVAL)
+//       {
+//          /* shouldn't happen */
+//          pgagroal_log_fatal("io_uring_prep_cancel error: %s", strerror(-rc));
+//       }
+//       if (rc == -EALREADY)
+//       {
+//          pgagroal_log_warn("io_uring_prep_cancel error: %s", strerror(-rc));
+//       }
+//       return PGAGROAL_EVENT_RC_OK;
+//    }
+
+//    /* This type of thing is not ideal, ideally I should have
+//     * only event_watcher_t pointers returning in cqe->user_data */
+//    switch (watcher->type)
+//    {
+//       case PGAGROAL_EVENT_TYPE_PERIODIC:
+//          per = (struct periodic_watcher*)watcher;
+//          per->cb();
+//          break;
+//       case PGAGROAL_EVENT_TYPE_MAIN:
+//          io = (struct io_watcher*)watcher;
+//          io->fds.main.client_fd = cqe->res;
+//          io->cb(io);
+//          break;
+//       case PGAGROAL_EVENT_TYPE_WORKER:
+//          io = (struct io_watcher*)watcher;
+//          if (!(cqe->res))
+//          {
+//             pgagroal_log_debug("Connection closed");
+//             msg->length = 0;
+//             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
+//          }
+//          else
+//          {
+//             msg->length = cqe->res;
+//             rc = PGAGROAL_EVENT_RC_OK;
+//          }
+//          io->cb(io);
+
+//          /* The loop can break in the callback, check if
+//           * the event loop is still running before rearming */
+//          if (pgagroal_event_loop_is_running())
+//          {
+//             ev_io_uring_io_start(io);
+//          }
+
+//          break;
+//       default:
+//          /* reaching here is a bug, do not recover */
+//          pgagroal_log_fatal("BUG: Unknown event type: %d", watcher->type);
+//          return PGAGROAL_EVENT_RC_FATAL;
+//    }
+//    return rc;
+// }
+
 static int
 ev_io_uring_handler(struct io_uring_cqe* cqe)
 {
-   int rc = 0;
+   int rc = PGAGROAL_EVENT_RC_OK;
    event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
    struct io_watcher* io;
    struct periodic_watcher* per;
@@ -792,63 +865,121 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
    loop->bid = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
-   /* Cancelled requests will trigger the handler, but have NULL data. */
-   if (!watcher)
+   /* Cancel SQEs explicitly set user_data = NULL.
+    * - If there's nothing to cancel, CQE.res = -ENOENT (benign).
+    * - If cancellation is already in progress, CQE.res = -EALREADY (benign).
+    * Treat both as OK to avoid tearing down the loop.
+    */
+   if (watcher == NULL)
    {
-      rc = cqe->res;
-      if (rc == -ENOENT || rc == -EINVAL)
+      int cres = cqe->res;
+      if (cres == -ENOENT || cres == -EALREADY || cres == 0)
       {
-         /* shouldn't happen */
-         pgagroal_log_fatal("io_uring_prep_cancel error: %s", strerror(-rc));
+         return PGAGROAL_EVENT_RC_OK;
       }
-      if (rc == -EALREADY)
+      if (cres < 0)
       {
-         pgagroal_log_warn("io_uring_prep_cancel error: %s", strerror(-rc));
+         /* Unexpected cancel result: warn but don't break the loop */
+         pgagroal_log_warn("io_uring cancel completion: %s", strerror(-cres));
       }
       return PGAGROAL_EVENT_RC_OK;
    }
 
-   /* This type of thing is not ideal, ideally I should have
-    * only event_watcher_t pointers returning in cqe->user_data */
    switch (watcher->type)
    {
       case PGAGROAL_EVENT_TYPE_PERIODIC:
+         /* Timer cancel shows up as -ECANCELED: ignore */
+         if (cqe->res == -ECANCELED)
+         {
+            return PGAGROAL_EVENT_RC_OK;
+         }
+         if (cqe->res < 0)
+         {
+            pgagroal_log_error("periodic CQE error: %s", strerror(-cqe->res));
+            return PGAGROAL_EVENT_RC_ERROR;
+         }
          per = (struct periodic_watcher*)watcher;
          per->cb();
          break;
+
       case PGAGROAL_EVENT_TYPE_MAIN:
+         /* Accept cancel shows up as -ECANCELED: ignore */
+         if (cqe->res == -ECANCELED)
+         {
+            return PGAGROAL_EVENT_RC_OK;
+         }
+         if (cqe->res < 0)
+         {
+            if (cqe->res != -EAGAIN && cqe->res != -EINTR)
+            {
+               pgagroal_log_error("accept CQE error: %s", strerror(-cqe->res));
+               return PGAGROAL_EVENT_RC_ERROR;
+            }
+            return PGAGROAL_EVENT_RC_OK;
+         }
          io = (struct io_watcher*)watcher;
          io->fds.main.client_fd = cqe->res;
          io->cb(io);
          break;
+
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
-         if (!(cqe->res))
+
+         /* Recv cancel due to io_stop: benign, do not callback or rearm */
+         if (cqe->res == -ECANCELED)
          {
+            return PGAGROAL_EVENT_RC_OK;
+         }
+
+         if (cqe->res == 0)
+         {
+            /* Peer closed */
             pgagroal_log_debug("Connection closed");
             msg->length = 0;
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
+            io->cb(io);
+            /* The callback should close/stop; don't rearm */
+            return rc;
+         }
+
+         if (cqe->res < 0)
+         {
+            if (cqe->res == -EAGAIN || cqe->res == -EINTR)
+            {
+               /* Transient, just rearm below */
+            }
+            else
+            {
+               /* Hard recv error: treat as closed */
+               pgagroal_log_debug("Receive error on fd %d: %s",
+                                  io->fds.worker.rcv_fd, strerror(-cqe->res));
+               msg->length = 0;
+               rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
+               io->cb(io);
+               return rc;
+            }
          }
          else
          {
+            /* Normal recv */
             msg->length = cqe->res;
             rc = PGAGROAL_EVENT_RC_OK;
+            io->cb(io);
          }
-         io->cb(io);
 
-         /* The loop can break in the callback, check if
-          * the event loop is still running before rearming */
+         /* Only rearm if the loop is still running */
          if (pgagroal_event_loop_is_running())
          {
             ev_io_uring_io_start(io);
          }
-
          break;
+
       default:
          /* reaching here is a bug, do not recover */
          pgagroal_log_fatal("BUG: Unknown event type: %d", watcher->type);
          return PGAGROAL_EVENT_RC_FATAL;
    }
+
    return rc;
 }
 
