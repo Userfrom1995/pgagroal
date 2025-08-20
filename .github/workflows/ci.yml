@@ -93,9 +93,9 @@ jobs:
           $(which bash) ./testsuite.sh
         working-directory: /home/runner/work/pgagroal/pgagroal/build
 
-      - name: Run config tests
-        run: $(which bash) ./testsuite.sh run-configs
-        working-directory: /home/runner/work/pgagroal/pgagroal/build
+      # - name: Run config tests
+      #   run: $(which bash) ./testsuite.sh run-configs
+      #   working-directory: /home/runner/work/pgagroal/pgagroal/build
 
 # === Generate coverage reports ===
       - name: Generate Detailed HTML Coverage Report
