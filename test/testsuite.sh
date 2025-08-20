@@ -528,6 +528,7 @@ max_connections = 8
 validation = off
 unix_socket_dir = /tmp/
 pipeline = 'transaction'
+allow_unknown_users = false
 
 [primary]
 host = localhost
