@@ -3,10 +3,10 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - non_uring
   pull_request:
     branches:
-      - master
+      - non_uring
   workflow_dispatch:
 
 jobs:
