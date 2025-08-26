@@ -2,70 +2,71 @@
 
 ## Overview
 
-This document explains how to run the pgagroal test suite, generate code coverage, and use containerized testing. The main entry point for all tests is the `testsuite.sh` script.
 
-## Quick Start
+This document explains how to run the pgagroal test suite, generate code coverage, and use containerized testing. All testing is now performed using the `check.sh` script with containerized PostgreSQL (recommended and default for all development and CI).
+### Running Specific Test Cases or Suites
 
-1. **Build the Project** (with GCC for coverage):
+You can run a specific test case or suite using the following environment variables:
 
-    ```sh
-    git clone https://github.com/pgagroal/pgagroal.git
-    cd pgagroal
-    mkdir build
-    cd build
-    cmake -DCMAKE_BUILD_TYPE=Debug ..
-    make
-    ```
+- `CK_RUN_CASE=<test_case_name> ./check.sh` — run a single test case
+- `CK_RUN_SUITE=<test_suite_name> ./check.sh` — run a single test suite
 
-2. **Run the Test Suite**:
+Alternatively, you can export the environment variable before running the script:
 
-    ```sh
-    ./testsuite.sh
-    ```
+```sh
+export CK_RUN_CASE=<test_case_name>
+./check.sh
+```
 
-    - This script sets up temporary PostgreSQL and pgagroal environments in the build directory, runs all tests, and produces logs and (if enabled) coverage data.
+The environment variables will be automatically unset when the test is finished or aborted.
 
-3. **Clean Up** (before re-running):
+## Quick Start (Containerized - Recommended)
 
-    ```sh
-    ./testsuite.sh clean
-    ```
+## Containerized Testing (`check.sh`) (Recommended)
 
-4. **Run Configuration Tests** (multiple config scenarios):
+The `check.sh` script is the main and recommended way to run the pgagroal test suite. It works on any system with Docker or Podman (Linux, macOS, FreeBSD, Windows/WSL2). It automatically builds a PostgreSQL 17 container, sets up the test environment, runs all tests, and generates coverage reports and logs. No local PostgreSQL installation is required.
 
-    ```sh
-    ./testsuite.sh run-configs
-    ```
+### Key Features
 
-5. **Generate Coverage Reports** (if built with GCC and coverage enabled):
+- **No local PostgreSQL required**: Uses Docker/Podman containers
+- **Consistent environment**: Same PostgreSQL version (17) across all systems
+- **Automatic cleanup**: Containers are removed after tests
+- **Integrated coverage**: Coverage reports generated automatically
+- **Isolated testing**: No interference with local PostgreSQL installations
+- **Cross-platform**: Works on Linux, macOS, FreeBSD, and Windows/WSL2 (with Docker/Podman)
+- **Multiple configurations**: Supports running tests on multiple pgagroal configurations
+- **Easy setup**: `./check.sh setup` installs all dependencies and builds the PostgreSQL image
+- **Flexible CI support**: Used in CI for Linux, and will be used for all platforms after migration
 
-    ```sh
-    # From inside the build directory, after running tests
-    mkdir -p ./coverage
-    gcovr -r ../src --object-directory . --html --html-details -o ./coverage/index.html
-    gcovr -r ../src --object-directory . > ./coverage/summary.txt
-    ```
+### Usage
 
-6. **Containerized Testing** (Optional, requires Docker or Podman):
+```sh
+./check.sh [sub-command]
+```
 
-    - **Run all tests in a container:**
-      ```sh
-      ctest -V
-      ```
-    - **Or run and generate coverage in a container:**
-      ```sh
-      ./coverage.sh
-      ```
 
-## Artifacts
+**Subcommands:**
 
-After running tests, you will find:
+- `setup`                  Install dependencies and build PostgreSQL image (one-time setup)
+- `clean`                  Clean up test suite environment and remove PostgreSQL image
+- `run-configs`            Run the testsuite on multiple pgagroal configurations (containerized)
+- `ci`                     Run in CI mode (local PostgreSQL, no container)
+- `run-configs-ci`         Run multiple configuration tests using local PostgreSQL (like ci + run-configs)
+- `ci-nonbuild`            Run in CI mode (local PostgreSQL, skip build step)
+- `run-configs-ci-nonbuild` Run multiple configuration tests using local PostgreSQL, skip build step
+- (no sub-command)         Default: run all tests in containerized mode
 
-- Test logs: `build/log/`
-- Coverage reports: `build/coverage/`
-- CTest logs: `build/testing/`
+> **For local development, use only the `run-configs` and default (no sub-command) modes. Other modes (`ci`, `run-configs-ci`, etc.) are intended for CI and may interfere with your local PostgreSQL setup if used locally.**
 
-## Adding New Test Cases
+### Artifacts and Logs
+
+After running containerized tests, you will find:
+
+- Test logs: `/tmp/pgagroal-test/log/`
+- PostgreSQL logs: `/tmp/pgagroal-test/pg_log/`
+- Coverage reports: `/tmp/pgagroal-test/coverage/`
+
+### Adding New Test Cases
 
 - Add new `.c` and `.h` files in `test/testcases/`.
 - Register your test suite in `test/testcases/runner.c`.
@@ -79,18 +80,32 @@ After running tests, you will find:
     )
     ```
 
-## Prerequisites
 
-- PostgreSQL 17.x installed and available in your PATH
-- The `initdb`, `pg_ctl`, and `psql` binaries in your PATH
+
+### Prerequisites
+
+- **Docker or Podman** installed and running
 - The `check` library installed for C unit tests
-- **Docker or Podman** installed (for containerized tests)
-- **gcov** and **gcovr** installed (for coverage reports)
+- **LLVM/clang** and **llvm-cov**/**llvm-profdata** installed (for coverage reports)
 
-## Notes
+> **Note:** The `check.sh` script always builds the project with Clang in Debug mode for coverage and testability.
 
-- Always clean up (`./testsuite.sh clean`) before re-running tests to avoid stale environments.
-- If you want to test multiple configuration scenarios, add directories with `pgagroal.conf` and `pgagroal_hba.conf` under `test/conf/` and use `./testsuite.sh run-configs`.
-- For more details, see the comments and logic in [`test/testsuite.sh`](../test/testsuite.sh).
+
+
+### Notes
+
+- The containerized approach automatically handles cleanup on exit.
+- Use `./check.sh clean` to manually remove containers and test data.
+- PostgreSQL container logs are available with debug5 level for troubleshooting.
+- The script automatically detects and uses either Docker or Podman.
+- It is recommended to **ALWAYS** run tests before raising a PR.
+- Coverage reports are generated using LLVM tooling (clang, llvm-cov, llvm-profdata).
+- For local development, use only the `run-configs` and default (no sub-command) modes. Other modes (`ci`, `run-configs-ci`, etc.) are intended for CI and may interfere with your local PostgreSQL setup if used locally.
+
+---
+
+*Note: The legacy `testsuite.sh` script is only used for CI on macOS and FreeBSD during migration. All new development and CI should use `check.sh`.*
+    
+    ```
 
 ---
