@@ -45,6 +45,8 @@ extern "C" {
 #define PGAGROAL_CONFIGURATION_TRAIL    "/pgagroal-testsuite/conf/pgagroal.conf"
 
 extern char project_directory[BUFFER_SIZE];
+extern char* user;
+extern char* database;
 
 /**
  * Initialize the tsclient API
@@ -72,7 +74,7 @@ pgagroal_tsclient_destroy();
  * @return 0 upon success, otherwise 1
  */
 int
-pgagroal_tsclient_execute_pgbench(char* database, bool select_only, int client_count, int thread_count, int transaction_count);
+pgagroal_tsclient_execute_pgbench(char* user, char* database, bool select_only, int client_count, int thread_count, int transaction_count);
 
 #ifdef __cplusplus
 }

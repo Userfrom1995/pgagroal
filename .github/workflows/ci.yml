@@ -90,11 +90,7 @@ jobs:
               export ASAN_OPTIONS=detect_leaks=0,verify_asan_link_order=0
             fi
           fi
-          $(which bash) ./testsuite.sh
-        working-directory: /home/runner/work/pgagroal/pgagroal/build
-
-      - name: Run config tests
-        run: $(which bash) ./testsuite.sh run-configs
+          $(which bash) ./check.sh run-configs-ci-nonbuild
         working-directory: /home/runner/work/pgagroal/pgagroal/build
 
 # === Generate coverage reports ===
@@ -142,12 +138,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ matrix.compiler }}-${{ matrix.build_type }}
-          path: /home/runner/work/pgagroal/pgagroal/build/log
+          path: |
+           /home/runner/work/pgagroal/pgagroal/log
+           /tmp/pgagroal-test/*
           retention-days: 90
-
-      - name: Clean Testsuite
-        run: $(which bash) ./testsuite.sh clean
-        working-directory: /home/runner/work/pgagroal/pgagroal/build
 
       - name: Upload Generated Documentation Artifact
         if: matrix.compiler == 'gcc' && matrix.build_type == 'Release'
@@ -180,7 +174,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen
+          brew install openssl libev zstd lz4 libssh bzip2 docutils podcheck graphviz doxygen
           brew install postgresql${POSTGRESQL_VERSION}
           
       - name: Add PostgreSQL to Path

@@ -1,3 +1,10 @@
+# DEPRECATION NOTICE
+
+
+This document describes the **old test suite** (`testsuite.sh`), which is being deprecated. Once the new test infrastructure is fully in place, this script and documentation will be removed.
+
+To run tests locally or for the latest test instructions, see [TEST.md](https://github.com/agroal/pgagroal/blob/master/doc/TEST.md) and use the new `check.sh`-based workflow.
+
 # Test
 
 ## Local Environment

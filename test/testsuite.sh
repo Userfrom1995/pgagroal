@@ -365,24 +365,6 @@ initialize_cluster() {
         clean
         exit 1
     fi
-    err_out=$(psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c "CREATE ROLE myuser WITH LOGIN PASSWORD '$PGPASSWORD';" 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "create role myuser ... $err_out"
-        stop_pgctl
-        clean
-        exit 1
-    else
-        echo "create role myuser ... ok"
-    fi
-    err_out=$(psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c "CREATE DATABASE mydb WITH OWNER myuser;" 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "create a database mydb with owner myuser ... $err_out"
-        stop_pgctl
-        clean
-        exit 1
-    else
-        echo "create a database mydb with owner myuser ... ok"
-    fi
     err_out=$(pgbench -i -s 1 -n -h localhost -p $PORT -U $PSQL_USER -d postgres 2>&1)
     if [ $? -ne 0 ]; then
         echo "initialize pgbench ... $err_out"
@@ -523,7 +505,7 @@ log_type = file
 log_level = debug5
 log_path = $PGAGROAL_LOG_FILE
 
-max_connections = 100
+max_connections = 8
 idle_timeout = 600
 validation = off
 unix_socket_dir = /tmp/
@@ -587,8 +569,15 @@ execute_testcases() {
     fi
 
     ### RUN TESTCASES ###
-    run_as_postgres "$TEST_DIRECTORY/pgagroal_test $PROJECT_DIRECTORY"
+    run_as_postgres "$TEST_DIRECTORY/pgagroal_test $PROJECT_DIRECTORY $PSQL_USER" "postgres"
     if [ $? -ne 0 ]; then
+        echo "========== PGBENCH LOG FILE =========="
+        if [ -f "$PGBENCH_LOG_FILE" ]; then
+            cat "$PGBENCH_LOG_FILE"
+        else
+            echo "Log file $PGBENCH_LOG_FILE does not exist."
+        fi
+        echo "========== END OF LOG FILE =========="
         stop_pgctl
         clean
         exit 1
