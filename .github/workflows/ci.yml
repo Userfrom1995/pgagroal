@@ -204,11 +204,11 @@ jobs:
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
-        run: $(which bash) ./testsuite.sh
+        run: $(which bash) ./check.sh run-configs-ci-nonbuild
   
-      - name: Clean up after Clang tests
-        working-directory: ${{ env.BUILD_DIR }}
-        run: $(which bash) ./testsuite.sh clean
+      # - name: Clean up after Clang tests
+      #   working-directory: ${{ env.BUILD_DIR }}
+      #   run: $(which bash) ./testsuite.sh clean
 
       - name: Show logs on failure
         if: failure()
