@@ -3,10 +3,10 @@ name: CI
 on:
   push:
     branches:
-      - test_infra
+      - infra_test
   pull_request:
     branches:
-      - test_infra
+      - infra_test
   workflow_dispatch:
 
 jobs:
