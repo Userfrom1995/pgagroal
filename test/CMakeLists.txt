@@ -108,7 +108,7 @@ endif()
 if(container)
 
 add_test(NAME container_test
-           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/coverage.sh
+           COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/check.sh
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 set_property(TEST container_test
@@ -118,22 +118,11 @@ endif()
 
 file(
     COPY
-    "${CMAKE_SOURCE_DIR}/test/testsuite.sh"
-    DESTINATION "${CMAKE_BINARY_DIR}/"
-)
-
-file(
-    COPY
     "${CMAKE_SOURCE_DIR}/test/conf"
     DESTINATION "${CMAKE_BINARY_DIR}/"
 )
 configure_file(
-  "${CMAKE_SOURCE_DIR}/test/coverage.sh"
-  "${CMAKE_BINARY_DIR}/coverage.sh"
-  COPYONLY
-)
-configure_file(
-  "${CMAKE_SOURCE_DIR}/test/Dockerfile.testsuite"
-  "${CMAKE_BINARY_DIR}/Dockerfile.testsuite"
+  "${CMAKE_SOURCE_DIR}/test/check.sh"
+  "${CMAKE_BINARY_DIR}/check.sh"
   COPYONLY
 )
