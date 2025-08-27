@@ -228,9 +228,9 @@ build_postgresql_image() {
   CUR_DIR=$(pwd)
   cd $TEST_PG17_DIRECTORY
   set +e
-  sudo make clean
+  make clean
   set -e
-  sudo make build
+  make build
   cd $CUR_DIR
 }
 
@@ -239,7 +239,7 @@ cleanup_postgresql_image() {
   echo "Cleanup of the PostgreSQL 17 image $IMAGE_NAME"
   CUR_DIR=$(pwd)
   cd $TEST_PG17_DIRECTORY
-  sudo make clean
+  make clean
   cd $CUR_DIR
   set -e
 }
@@ -257,16 +257,16 @@ start_postgresql_container() {
 
   echo "Checking PostgreSQL 17 container readiness"
   sleep 3
-  if sudo $CONTAINER_ENGINE exec $CONTAINER_NAME /usr/pgsql-17/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+  if $CONTAINER_ENGINE exec $CONTAINER_NAME /usr/pgsql-17/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
     echo "PostgreSQL 17 is ready!"
   else
     echo "Wait for 10 seconds and retry"
     sleep 10
-    if sudo $CONTAINER_ENGINE exec $CONTAINER_NAME /usr/pgsql-17/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+    if $CONTAINER_ENGINE exec $CONTAINER_NAME /usr/pgsql-17/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
       echo "PostgreSQL 17 is ready!"
     else
       echo "Printing container logs..."
-      sudo $CONTAINER_ENGINE logs $CONTAINER_NAME
+      $CONTAINER_ENGINE logs $CONTAINER_NAME
       echo ""
       echo "PostgreSQL 17 is not ready, exiting"
       cleanup_postgresql_image
@@ -276,8 +276,8 @@ start_postgresql_container() {
 }
 
 remove_postgresql_container() {
-  sudo $CONTAINER_ENGINE stop $CONTAINER_NAME 2>/dev/null || true
-  sudo $CONTAINER_ENGINE rm -f $CONTAINER_NAME 2>/dev/null || true
+  $CONTAINER_ENGINE stop $CONTAINER_NAME 2>/dev/null || true
+  $CONTAINER_ENGINE rm -f $CONTAINER_NAME 2>/dev/null || true
 }
 
 start_postgresql() {
