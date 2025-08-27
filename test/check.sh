@@ -29,7 +29,7 @@
 set -eo pipefail
 
 # Variables
-IMAGE_NAME="localhost/pgagroal-test-postgresql17-rocky9"
+IMAGE_NAME="pgagroal-test-postgresql17-rocky9"
 CONTAINER_NAME="pgagroal-test-postgresql17"
 
 SCRIPT_DIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
