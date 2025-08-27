@@ -491,7 +491,7 @@ usage() {
 
 run_tests() {
   echo "Building PostgreSQL 17 image if necessary"
-  if sudo $CONTAINER_ENGINE image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+  if $CONTAINER_ENGINE image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
     echo "Image $IMAGE_NAME exists, skip building"
   else
     if [[   $MODE != "ci" ]]; then
