@@ -204,9 +204,7 @@ jobs:
       - name: Inilialize podman
         run: |
          brew install docker
-         brew install colima
-         brew services start colima
-         export DOCKER_HOST="unix://$HOME/.colima/docker.sock"
+         colima start
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
