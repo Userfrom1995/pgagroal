@@ -203,7 +203,7 @@ jobs:
 
       - name: Inilialize podman
         run: |
-         brew install docker
+         brew install docker colima
          colima start
       
       - name: Run tests with Clang build
