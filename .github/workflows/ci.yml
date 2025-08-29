@@ -174,7 +174,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen 
+          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen podman
           # brew install postgresql${POSTGRESQL_VERSION}
           
       # - name: Add PostgreSQL to Path
@@ -201,6 +201,11 @@ jobs:
           cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           make -j$(sysctl -n hw.ncpu)
+
+      - name: Inilialize podman
+        run: |
+         podman machine init
+         podman machine start
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
