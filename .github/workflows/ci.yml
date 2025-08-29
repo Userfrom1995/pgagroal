@@ -174,7 +174,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen podman
+          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen
           # brew install postgresql${POSTGRESQL_VERSION}
           
       # - name: Add PostgreSQL to Path
@@ -204,8 +204,10 @@ jobs:
 
       - name: Inilialize podman
         run: |
-         podman machine init
-         podman machine start
+         brew install docker
+         brew install colima
+         colima start --runtime docker
+         export DOCKER_HOST="unix://$HOME/.colima/docker.sock"
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
