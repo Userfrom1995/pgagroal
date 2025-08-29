@@ -174,7 +174,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen podman
+          # brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen
           # brew install postgresql${POSTGRESQL_VERSION}
           
       # - name: Add PostgreSQL to Path
