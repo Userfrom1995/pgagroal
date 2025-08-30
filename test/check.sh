@@ -65,7 +65,6 @@ elif command -v podman &> /dev/null; then
   CONTAINER_ENGINE="podman"
 else
   echo "Neither Docker nor Podman is installed. Please install one to proceed."
-  exit 1
 fi 
 
  # Port conflict resolution functions
