@@ -155,7 +155,7 @@ jobs:
 
 
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-12
     env:
       PGAGROAL_ROOT: ${{ github.workspace }}
       BUILD_DIR: ${{ github.workspace }}/build
@@ -202,7 +202,7 @@ jobs:
           make -j$(sysctl -n hw.ncpu)
 
       - name: Initialize podman
-        run: colima start --cpu 3 --memory 6 --disk 100 --vm-type=qemu --mount-type=sshfs --dns=1.1.1.1
+        run: colima start
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
