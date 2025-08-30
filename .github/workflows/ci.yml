@@ -155,7 +155,7 @@ jobs:
 
 
   build-macos:
-    runs-on: macos-13
+    runs-on: macos-11
     env:
       PGAGROAL_ROOT: ${{ github.workspace }}
       BUILD_DIR: ${{ github.workspace }}/build
