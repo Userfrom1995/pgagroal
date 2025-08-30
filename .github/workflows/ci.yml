@@ -207,7 +207,7 @@ jobs:
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
-        run: $(which bash) ./check.sh
+        run: $(which bash) ./check.sh ci
   
       # - name: Clean up after Clang tests
       #   working-directory: ${{ env.BUILD_DIR }}
