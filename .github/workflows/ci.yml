@@ -202,12 +202,12 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           make -j$(sysctl -n hw.ncpu)
       
-      - name: Initialize colima
-        run: colima start
+      # - name: Initialize colima
+      #   run: colima start
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
-        run: $(which bash) ./check.sh
+        run: $(which bash) ./check.sh ci
   
       # - name: Clean up after Clang tests
       #   working-directory: ${{ env.BUILD_DIR }}
