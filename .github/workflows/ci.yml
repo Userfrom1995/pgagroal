@@ -174,11 +174,12 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen docker colima qemu
+          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen docker colima qemu 
+          brew install postgresql${POSTGRESQL_VERSION}
           
-      # - name: Add PostgreSQL to Path
-      #   run: |
-      #     echo "$(brew --prefix postgresql${POSTGRESQL_VERSION})/bin" >> $GITHUB_PATH
+      - name: Add PostgreSQL to Path
+        run: |
+          echo "$(brew --prefix postgresql${POSTGRESQL_VERSION})/bin" >> $GITHUB_PATH
      
       # - name: Start PostgreSQL
       #   run: |
