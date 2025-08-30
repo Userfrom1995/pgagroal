@@ -261,7 +261,7 @@ start_postgresql_container() {
     echo "PostgreSQL $ENV_PGVERSION is ready!"
   else
     echo "Wait for 10 seconds and retry"
-    sleep 300
+    sleep 60
     if $CONTAINER_ENGINE exec $CONTAINER_NAME /usr/pgsql-$ENV_PGVERSION/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
       echo "PostgreSQL $ENV_PGVERSION is ready!"
     else
