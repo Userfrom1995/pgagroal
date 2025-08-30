@@ -174,7 +174,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen 
+          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen docker colima
           brew install postgresql${POSTGRESQL_VERSION}
           
       - name: Add PostgreSQL to Path
@@ -202,9 +202,12 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           make -j$(sysctl -n hw.ncpu)
       
+      - name: Initialize colima
+        run: colima start
+      
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
-        run: $(which bash) ./check.sh ci
+        run: $(which bash) ./check.sh
   
       # - name: Clean up after Clang tests
       #   working-directory: ${{ env.BUILD_DIR }}
