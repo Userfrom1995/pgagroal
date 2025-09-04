@@ -225,7 +225,6 @@ jobs:
           name: macos-build-logs
           path: |
             ${{ env.BUILD_DIR }}/log/
-            /tmp/*.log
           retention-days: 7
 
       # - name: Run pgagroal and test
