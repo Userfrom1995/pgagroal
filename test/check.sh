@@ -31,6 +31,11 @@ set -eo pipefail
 
 OS=$(uname)
 
+PSQL_USER=$USER
+if [[ "$OS" == "FreeBSD" ]]; then
+  PSQL_USER=postgres
+fi
+
 # Variables
 ENV_PGVERSION=17
 IMAGE_NAME="pgagroal-test-postgresql${ENV_PGVERSION}-rocky9"
@@ -180,59 +185,63 @@ cleanup() {
    echo "pgagroal cleanup completed"
 
    echo "Clean Test Resources"
+   if [[ $MODE == "ci" ]]; then
+     echo "Stopping local PostgreSQL"
+     run_as_postgres "pg_ctl -D \"$DATA_DIRECTORY\" stop" || true
+   fi
    if [[ -d $PGAGROAL_ROOT_DIR ]]; then
-      if ! sudo chown -R "$USER:$USER" "$PGAGROAL_ROOT_DIR"; then
-        echo " Could not change ownership. You might need to clean manually."
-      fi
-
-      if [[ -d $BASE_DIR ]]; then
-        sudo rm -Rf "$BASE_DIR"
-      fi
-      
-      # Generate LLVM coverage reports
-      if ls "$COVERAGE_DIR"/*.profraw >/dev/null 2>&1; then
-       echo "Generating coverage report, expect error when the binary is not covered at all"
-       llvm-profdata merge -sparse $COVERAGE_DIR/*.profraw -o $COVERAGE_DIR/coverage.profdata
-
-       echo "Generating $COVERAGE_DIR/coverage-report-libpgagroal.txt"
-       llvm-cov report $EXECUTABLE_DIRECTORY/libpgagroal.so \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-report-libpgagroal.txt
-       echo "Generating $COVERAGE_DIR/coverage-report-pgagroal.txt"
-       llvm-cov report $EXECUTABLE_DIRECTORY/pgagroal \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-report-pgagroal.txt
-      echo "Generating $COVERAGE_DIR/coverage-report-pgagroal-cli.txt"
-      llvm-cov report $EXECUTABLE_DIRECTORY/pgagroal-cli \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-report-pgagroal-cli.txt
-      echo "Generating $COVERAGE_DIR/coverage-report-pgagroal-admin.txt"
-      llvm-cov report $EXECUTABLE_DIRECTORY/pgagroal-admin \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-report-pgagroal-admin.txt
-
-       echo "Generating $COVERAGE_DIR/coverage-libpgagroal.txt"
-       llvm-cov show $EXECUTABLE_DIRECTORY/libpgagroal.so \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-libpgagroal.txt
-       echo "Generating $COVERAGE_DIR/coverage-pgagroal.txt"
-       llvm-cov show $EXECUTABLE_DIRECTORY/pgagroal \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-pgagroal.txt
-      echo "Generating $COVERAGE_DIR/coverage-pgagroal-cli.txt"
-      llvm-cov show $EXECUTABLE_DIRECTORY/pgagroal-cli \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-pgagroal-cli.txt
-      echo "Generating $COVERAGE_DIR/coverage-pgagroal-admin.txt"
-      llvm-cov show $EXECUTABLE_DIRECTORY/pgagroal-admin \
-         --instr-profile=$COVERAGE_DIR/coverage.profdata \
-         --format=text > $COVERAGE_DIR/coverage-pgagroal-admin.txt
-         
-       echo "Coverage --> $COVERAGE_DIR"
+     if ! sudo chown -R "$USER:$USER" "$PGAGROAL_ROOT_DIR"; then
+       echo " Could not change ownership. You might need to clean manually."
      fi
-      
-      echo "Logs --> $LOG_DIR, $PG_LOG_DIR"
-      sudo chmod -R 700 "$PGAGROAL_ROOT_DIR"
+   
+     if [[ -d $BASE_DIR ]]; then
+       sudo rm -Rf "$BASE_DIR"
+     fi
+     
+     # Generate LLVM coverage reports
+     if ls "$COVERAGE_DIR"/*.profraw >/dev/null 2>&1; then
+      echo "Generating coverage report, expect error when the binary is not covered at all"
+      llvm-profdata merge -sparse $COVERAGE_DIR/*.profraw -o $COVERAGE_DIR/coverage.profdata
+   
+      echo "Generating $COVERAGE_DIR/coverage-report-libpgagroal.txt"
+      llvm-cov report $EXECUTABLE_DIRECTORY/libpgagroal.so \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-report-libpgagroal.txt
+      echo "Generating $COVERAGE_DIR/coverage-report-pgagroal.txt"
+      llvm-cov report $EXECUTABLE_DIRECTORY/pgagroal \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-report-pgagroal.txt
+     echo "Generating $COVERAGE_DIR/coverage-report-pgagroal-cli.txt"
+     llvm-cov report $EXECUTABLE_DIRECTORY/pgagroal-cli \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-report-pgagroal-cli.txt
+     echo "Generating $COVERAGE_DIR/coverage-report-pgagroal-admin.txt"
+     llvm-cov report $EXECUTABLE_DIRECTORY/pgagroal-admin \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-report-pgagroal-admin.txt
+   
+      echo "Generating $COVERAGE_DIR/coverage-libpgagroal.txt"
+      llvm-cov show $EXECUTABLE_DIRECTORY/libpgagroal.so \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-libpgagroal.txt
+      echo "Generating $COVERAGE_DIR/coverage-pgagroal.txt"
+      llvm-cov show $EXECUTABLE_DIRECTORY/pgagroal \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-pgagroal.txt
+     echo "Generating $COVERAGE_DIR/coverage-pgagroal-cli.txt"
+     llvm-cov show $EXECUTABLE_DIRECTORY/pgagroal-cli \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-pgagroal-cli.txt
+     echo "Generating $COVERAGE_DIR/coverage-pgagroal-admin.txt"
+     llvm-cov show $EXECUTABLE_DIRECTORY/pgagroal-admin \
+        --instr-profile=$COVERAGE_DIR/coverage.profdata \
+        --format=text > $COVERAGE_DIR/coverage-pgagroal-admin.txt
+        
+      echo "Coverage --> $COVERAGE_DIR"
+    fi
+     
+     echo "Logs --> $LOG_DIR, $PG_LOG_DIR"
+     sudo chmod -R 700 "$PGAGROAL_ROOT_DIR"
    else
      echo "$PGAGROAL_ROOT_DIR not present ... ok"
    fi
@@ -309,29 +318,76 @@ remove_postgresql_container() {
 }
 
 start_postgresql() {
-  echo "Setting up PostgreSQL $ENV_PGVERSION directory"
-  set +e
-  sudo rm -Rf /conf /pgconf /pgdata /pgwal
-  sudo cp -R $TEST_PG_DIRECTORY/root /
-  sudo ls /root
-  sudo mkdir -p /conf /pgconf /pgdata /pgwal /pglog
+  echo "Setting up PostgreSQL directory"
+  mkdir -p "$POSTGRES_OPERATION_DIR"
+  mkdir -p "$DATA_DIRECTORY"
+  mkdir -p "$PG_LOG_DIR"
 
-  sudo cp -R $TEST_PG_DIRECTORY/conf/* /conf/
-  sudo ls /conf
-  sudo chown -R postgres:postgres /conf /pgconf /pgdata /pgwal /pglog
-  sudo chmod -R 777 /conf /pgconf /pgdata /pgwal /pglog /root
-  sudo chmod +x /root/usr/bin/run-postgresql-local
-  sudo mkdir -p /root/usr/local/bin
+  if [[ "$OS" == "FreeBSD" ]]; then
+    if ! pw user show postgres >/dev/null 2>&1; then
+      sudo pw groupadd -n postgres -g 770
+      sudo pw useradd -n postgres -u 770 -g postgres -d /var/db/postgres -s /bin/sh
+    fi
+    sudo chown -R postgres:postgres "$POSTGRES_OPERATION_DIR"
+    sudo chown -R postgres:postgres "$PG_LOG_DIR"
+  fi
 
-  echo "Setting up env variables"
-  export PG_DATABASE=${PG_DATABASE}
-  export PG_USER_NAME=${PG_USER_NAME}
-  export PG_USER_PASSWORD=${PG_USER_PASSWORD}
-  export PG_REPL_USER_NAME=${PG_REPL_USER_NAME}
-  export PG_REPL_PASSWORD=${PG_REPL_PASSWORD}
+  run_as_postgres "initdb -k -D \"$DATA_DIRECTORY\""
 
-  sudo -E -u postgres /root/usr/bin/run-postgresql-local
-  set -e
+  # Configure postgresql.conf
+  LOG_ABS_PATH=$(realpath "$PG_LOG_DIR")
+  sed_i "s/^#*logging_collector.*/logging_collector = on/" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s/^#*log_destination.*/log_destination = 'stderr'/" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s|^#*log_directory.*|log_directory = '$LOG_ABS_PATH'|" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s/^#*log_filename.*/log_filename = 'logfile'/" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s|#unix_socket_directories = '.*'|unix_socket_directories = '/tmp'|" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s/#port = 5432/port = $PORT/" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s/#max_connections = 100/max_connections = 200/" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "s/#wal_level = replica/wal_level = replica/" "$DATA_DIRECTORY/postgresql.conf"
+
+  grep -q "^logging_collector" "$DATA_DIRECTORY/postgresql.conf" || echo "logging_collector = on" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^log_destination" "$DATA_DIRECTORY/postgresql.conf" || echo "log_destination = 'stderr'" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^log_directory" "$DATA_DIRECTORY/postgresql.conf" || echo "log_directory = '$LOG_ABS_PATH'" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^log_filename" "$DATA_DIRECTORY/postgresql.conf" || echo "log_filename = 'logfile'" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^unix_socket_directories" "$DATA_DIRECTORY/postgresql.conf" || echo "unix_socket_directories = '/tmp'" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^port" "$DATA_DIRECTORY/postgresql.conf" || echo "port = $PORT" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^max_connections" "$DATA_DIRECTORY/postgresql.conf" || echo "max_connections = 200" >> "$DATA_DIRECTORY/postgresql.conf"
+  grep -q "^wal_level" "$DATA_DIRECTORY/postgresql.conf" || echo "wal_level = replica" >> "$DATA_DIRECTORY/postgresql.conf"
+
+  # pg_hba.conf
+  cat <<EOF > "$DATA_DIRECTORY/pg_hba.conf"
+local   all             all                                     trust
+host    all             all             127.0.0.1/32            trust
+host    all             all             ::1/128                 trust
+host    replication     all             127.0.0.1/32            trust
+host    replication     all             ::1/128                 trust
+host    $PG_DATABASE    $PG_USER_NAME   127.0.0.1/32            scram-sha-256
+host    $PG_DATABASE    $PG_USER_NAME   ::1/128                 scram-sha-256
+EOF
+
+  # Start PostgreSQL
+  run_as_postgres "pg_ctl -D \"$DATA_DIRECTORY\" -l \"$PGCTL_LOG_FILE\" start"
+
+  # Wait for ready
+  for attempt in {1..10}; do
+    if run_as_postgres "pg_isready -h localhost -p $PORT >/dev/null 2>&1"; then
+      echo "PostgreSQL is ready"
+      break
+    fi
+    echo "Waiting for PostgreSQL (attempt $attempt/10)..."
+    sleep 3
+  done
+
+  if ! run_as_postgres "pg_isready -h localhost -p $PORT >/dev/null 2>&1"; then
+    echo "PostgreSQL failed to start"
+    cat "$PGCTL_LOG_FILE"
+    exit 1
+  fi
+
+  # Create roles and database
+  run_as_postgres "psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c \"CREATE ROLE $PG_USER_NAME WITH LOGIN PASSWORD '$PG_USER_PASSWORD';\""
+  run_as_postgres "psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c \"CREATE ROLE $PG_REPL_USER_NAME REPLICATION LOGIN PASSWORD '$PG_REPL_PASSWORD';\""
+  run_as_postgres "psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c \"CREATE DATABASE $PG_DATABASE OWNER $PG_USER_NAME;\""
 }
 
 pgagroal_initialize_configuration() {
@@ -566,8 +622,11 @@ run_tests() {
 
   # Initialize pgbench database
   echo "Initializing pgbench database..."
+  export PGPASSWORD=$PG_USER_PASSWORD
   pgbench -i -s 1 -h localhost -p "$PORT" -U "$PG_USER_NAME" -d "$PG_DATABASE"
-  if [[ $? -ne 0 ]]; then
+  pgbench_result=$?
+  unset PGPASSWORD
+  if [[ $pgbench_result -ne 0 ]]; then
     echo "pgbench initialization failed!"
     cleanup_postgresql_image
     exit 1
