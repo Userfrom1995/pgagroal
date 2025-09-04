@@ -31,6 +31,10 @@ set -eo pipefail
 
 OS=$(uname)
 
+if [[ "$OS" == "Darwin" ]]; then
+  export PATH="$PATH:$(brew --prefix postgresql@17)/bin"
+fi
+
 PSQL_USER=$USER
 if [[ "$OS" == "FreeBSD" ]]; then
   PSQL_USER=postgres
@@ -190,7 +194,7 @@ cleanup() {
      run_as_postgres "pg_ctl -D \"$DATA_DIRECTORY\" stop" || true
    fi
    if [[ -d $PGAGROAL_ROOT_DIR ]]; then
-     if ! sudo chown -R "$USER:$USER" "$PGAGROAL_ROOT_DIR"; then
+     if ! sudo chown -R "$USER" "$PGAGROAL_ROOT_DIR"; then
        echo " Could not change ownership. You might need to clean manually."
      fi
    
