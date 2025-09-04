@@ -526,10 +526,10 @@ run_multiple_config_tests() {
             cp "$entry/pgagroal_hba.conf" "$CONFIGURATION_DIRECTORY/pgagroal_hba.conf"
             
             # Update log path in the configuration to use our log directory
-            sed -i "s|log_path = test.log|log_path = $LOG_DIR/pgagroal-$config_name.log|g" "$CONFIGURATION_DIRECTORY/pgagroal.conf"
-            
+            sed_i "s|log_path = test.log|log_path = $LOG_DIR/pgagroal-$config_name.log|g" "$CONFIGURATION_DIRECTORY/pgagroal.conf"
+                         
             # Update port to match our PostgreSQL container
-            sed -i "s|port = 5432|port = $PORT|g" "$CONFIGURATION_DIRECTORY/pgagroal.conf"
+            sed_i "s|port = 5432|port = $PORT|g" "$CONFIGURATION_DIRECTORY/pgagroal.conf"
             
             # Stop any running pgagroal instance before starting new config
             stop_pgagroal
