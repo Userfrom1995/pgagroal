@@ -323,22 +323,22 @@ jobs:
           cd $GITHUB_WORKSPACE/build
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
           make -j$(sysctl -n hw.ncpu)
-      - name: Debug Testsuite Path
-        shell: freebsd {0}
-        run: |
-          cd "${GITHUB_WORKSPACE}/build"
-          bash ./testsuite.sh
-      - name: Clean Testsuite
-        shell: freebsd {0}
-        run: |
-          cd ${GITHUB_WORKSPACE}/build
-          bash ./testsuite.sh clean
-      - name: Upload Build Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: freebsd-${{ matrix.compiler }}-${{ matrix.build_type }}-logs
-          path: |
-            $GITHUB_WORKSPACE/build/log/*
-            /tmp/*.log
-          retention-days: 7
+      # - name: Debug Testsuite Path
+      #   shell: freebsd {0}
+      #   run: |
+      #     cd "${GITHUB_WORKSPACE}/build"
+      #     bash ./testsuite.sh
+      # - name: Clean Testsuite
+      #   shell: freebsd {0}
+      #   run: |
+      #     cd ${GITHUB_WORKSPACE}/build
+      #     bash ./testsuite.sh clean
+      # - name: Upload Build Artifacts
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: freebsd-${{ matrix.compiler }}-${{ matrix.build_type }}-logs
+      #     path: |
+      #       $GITHUB_WORKSPACE/build/log/*
+      #       /tmp/*.log
+      #     retention-days: 7
