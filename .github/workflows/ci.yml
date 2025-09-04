@@ -155,99 +155,99 @@ jobs:
 
 
 
-  # build-macos:
-  #   runs-on: macos-latest
-  #   env:
-  #     PGAGROAL_ROOT: ${{ github.workspace }}
-  #     BUILD_DIR: ${{ github.workspace }}/build
-  #     POSTGRESQL_VERSION: "@17"
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
+  build-macos:
+    runs-on: macos-latest
+    env:
+      PGAGROAL_ROOT: ${{ github.workspace }}
+      BUILD_DIR: ${{ github.workspace }}/build
+      POSTGRESQL_VERSION: "@17"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  #     - name: Cache Homebrew packages
-  #       uses: actions/cache@v3
-  #       with:
-  #         path: ~/Library/Caches/Homebrew
-  #         key: ${{ runner.os }}-homebrew-${{ hashFiles('.github/workflows/build-macos.yml') }}
-  #         restore-keys: ${{ runner.os }}-homebrew-
+      - name: Cache Homebrew packages
+        uses: actions/cache@v3
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-homebrew-${{ hashFiles('.github/workflows/build-macos.yml') }}
+          restore-keys: ${{ runner.os }}-homebrew-
 
-  #     - name: Install dependencies
-  #       run: |
-  #         brew update
-  #         brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen
-  #         # brew install postgresql${POSTGRESQL_VERSION}
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen podman docker colima
+          brew install postgresql${POSTGRESQL_VERSION}
           
-  #     # - name: Add PostgreSQL to Path
-  #     #   run: |
-  #     #     echo "$(brew --prefix postgresql${POSTGRESQL_VERSION})/bin" >> $GITHUB_PATH
+      # - name: Add PostgreSQL to Path
+      #   run: |
+      #     echo "$(brew --prefix postgresql${POSTGRESQL_VERSION})/bin" >> $GITHUB_PATH
      
-  #     # - name: Start PostgreSQL
-  #     #   run: |
-  #     #     brew services start postgresql@17
-  #     #     # Wait for PostgreSQL to start
-  #     #     for i in {1..30}; do
-  #     #       if pg_isready; then
-  #     #         echo "PostgreSQL is ready"
-  #     #         break
-  #     #       fi
-  #     #       echo "Waiting for PostgreSQL to start..."
-  #     #       sleep 1
-  #     #     done
+      # - name: Start PostgreSQL
+      #   run: |
+      #     brew services start postgresql@17
+      #     # Wait for PostgreSQL to start
+      #     for i in {1..30}; do
+      #       if pg_isready; then
+      #         echo "PostgreSQL is ready"
+      #         break
+      #       fi
+      #       echo "Waiting for PostgreSQL to start..."
+      #       sleep 1
+      #     done
 
-  #     - name: Configure and build with clang
-  #       run: |
-  #         export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
-  #         mkdir -p build
-  #         cd build
-  #         cmake -DCMAKE_BUILD_TYPE=Debug ..
-  #         make -j$(sysctl -n hw.ncpu)
+      - name: Configure and build with clang
+        run: |
+          export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Debug ..
+          make -j$(sysctl -n hw.ncpu)
       
-  #     # - name: Run tests with Clang build
-  #     #   working-directory: ${{ env.BUILD_DIR }}
-  #     #   run: $(which bash) ./testsuite.sh
+      # - name: Run tests with Clang build
+      #   working-directory: ${{ env.BUILD_DIR }}
+      #   run: $(which bash) ./testsuite.sh
   
-  #     # - name: Clean up after Clang tests
-  #     #   working-directory: ${{ env.BUILD_DIR }}
-  #     #   run: $(which bash) ./testsuite.sh clean
+      # - name: Clean up after Clang tests
+      #   working-directory: ${{ env.BUILD_DIR }}
+      #   run: $(which bash) ./testsuite.sh clean
 
-  #     # - name: Show logs on failure
-  #     #   if: failure()
-  #     #   working-directory: ${{ env.BUILD_DIR }}
-  #     #   run: |
-  #     #     cat ./log/logfile || echo "logfile not found"
-  #     #     cat ./log/pgagroal.log || echo "pgagroal.log not found"
+      # - name: Show logs on failure
+      #   if: failure()
+      #   working-directory: ${{ env.BUILD_DIR }}
+      #   run: |
+      #     cat ./log/logfile || echo "logfile not found"
+      #     cat ./log/pgagroal.log || echo "pgagroal.log not found"
 
-  #     # - name: Upload logs on failure
-  #     #   if: failure()
-  #     #   uses: actions/upload-artifact@v4
-  #     #   with:
-  #     #     name: macos-build-logs
-  #     #     path: |
-  #     #       ${{ env.BUILD_DIR }}/log/
-  #     #       /tmp/*.log
-  #     #     retention-days: 7
+      # - name: Upload logs on failure
+      #   if: failure()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: macos-build-logs
+      #     path: |
+      #       ${{ env.BUILD_DIR }}/log/
+      #       /tmp/*.log
+      #     retention-days: 7
 
-  #     # - name: Run pgagroal and test
-  #     #   run: |
-  #     #     sudo mkdir -p /etc/pgagroal
-  #     #     sudo cp doc/etc/*.conf /etc/pgagroal
-  #     #     cd build/src
-  #     #     ./pgagroal > /dev/null 2>&1 &
-  #     #     # Give pgagroal time to start
-  #     #     sleep 5
-  #     #     # Test if pgagroal is running
-  #     #     if ! ./pgagroal-cli ping; then
-  #     #       echo "pgagroal failed to start"
-  #     #       exit 1
-  #     #     fi
-  #     #     # Shutdown pgagroal
-  #     #     ./pgagroal-cli shutdown
+      # - name: Run pgagroal and test
+      #   run: |
+      #     sudo mkdir -p /etc/pgagroal
+      #     sudo cp doc/etc/*.conf /etc/pgagroal
+      #     cd build/src
+      #     ./pgagroal > /dev/null 2>&1 &
+      #     # Give pgagroal time to start
+      #     sleep 5
+      #     # Test if pgagroal is running
+      #     if ! ./pgagroal-cli ping; then
+      #       echo "pgagroal failed to start"
+      #       exit 1
+      #     fi
+      #     # Shutdown pgagroal
+      #     ./pgagroal-cli shutdown
 
-  #     # - name: Stop PostgreSQL
-  #     #   run: |
-  #     #     brew services stop postgresql@14
-  #     #   if: always()
+      # - name: Stop PostgreSQL
+      #   run: |
+      #     brew services stop postgresql@14
+      #   if: always()
 
 
   build-freebsd:
