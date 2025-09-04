@@ -76,10 +76,12 @@ MODE="dev"
 PORT=6432
 
 sed_i() {
+  local file="$1"
+  local pattern="$2"
   if [[ "$OS" == "Darwin" || "$OS" == "FreeBSD" ]]; then
-    sed -i '' -E "$@"
+    sed -i '' -E "$pattern" "$file"
   else
-    sed -i -E "$@"
+    sed -i -E "$pattern" "$file"
   fi
 }
 
@@ -340,14 +342,14 @@ start_postgresql() {
 
   # Configure postgresql.conf
   LOG_ABS_PATH=$(realpath "$PG_LOG_DIR")
-  sed_i "s/^#*logging_collector.*/logging_collector = on/" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s/^#*log_destination.*/log_destination = 'stderr'/" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s|^#*log_directory.*|log_directory = '$LOG_ABS_PATH'|" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s/^#*log_filename.*/log_filename = 'logfile'/" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s|#unix_socket_directories = '.*'|unix_socket_directories = '/tmp'|" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s/#port = 5432/port = $PORT/" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s/#max_connections = 100/max_connections = 200/" "$DATA_DIRECTORY/postgresql.conf"
-  sed_i "s/#wal_level = replica/wal_level = replica/" "$DATA_DIRECTORY/postgresql.conf"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s/^#*logging_collector.*/logging_collector = on/"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s/^#*log_destination.*/log_destination = 'stderr'/"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s|^#*log_directory.*|log_directory = '$LOG_ABS_PATH'|"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s/^#*log_filename.*/log_filename = 'logfile'/"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s|#unix_socket_directories = '.*'|unix_socket_directories = '/tmp'|"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s/#port = 5432/port = $PORT/"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s/#max_connections = 100/max_connections = 200/"
+  sed_i "$DATA_DIRECTORY/postgresql.conf" "s/#wal_level = replica/wal_level = replica/"
 
   grep -q "^logging_collector" "$DATA_DIRECTORY/postgresql.conf" || echo "logging_collector = on" >> "$DATA_DIRECTORY/postgresql.conf"
   grep -q "^log_destination" "$DATA_DIRECTORY/postgresql.conf" || echo "log_destination = 'stderr'" >> "$DATA_DIRECTORY/postgresql.conf"
@@ -526,10 +528,10 @@ run_multiple_config_tests() {
             cp "$entry/pgagroal_hba.conf" "$CONFIGURATION_DIRECTORY/pgagroal_hba.conf"
             
             # Update log path in the configuration to use our log directory
-            sed_i "s|log_path = test.log|log_path = $LOG_DIR/pgagroal-$config_name.log|g" "$CONFIGURATION_DIRECTORY/pgagroal.conf"
-                         
+            sed_i "$CONFIGURATION_DIRECTORY/pgagroal.conf" "s|log_path = test.log|log_path = $LOG_DIR/pgagroal-$config_name.log|g"
+
             # Update port to match our PostgreSQL container
-            sed_i "s|port = 5432|port = $PORT|g" "$CONFIGURATION_DIRECTORY/pgagroal.conf"
+            sed_i "$CONFIGURATION_DIRECTORY/pgagroal.conf" "s|port = 5432|port = $PORT|g"
             
             # Stop any running pgagroal instance before starting new config
             stop_pgagroal
