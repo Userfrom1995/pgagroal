@@ -224,7 +224,9 @@ jobs:
         with:
           name: macos-build-logs
           path: |
-            ${{ env.PGAGROAL_ROOT }}/log/
+            ${{ github.workspace }}/log/
+            /tmp/pgagroal-test/log/
+            /tmp/pgagroal-test/pg_log/
           retention-days: 7
 
       # - name: Run pgagroal and test
