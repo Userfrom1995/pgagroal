@@ -1,4 +1,3 @@
-  export LLVM_PROFILE_FILE="$COVERAGE_DIR/coverage-%m-%p.profraw"
 #!/bin/bash
 #
 # Copyright (C) 2025 The pgagroal community
