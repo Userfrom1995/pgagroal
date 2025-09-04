@@ -29,6 +29,8 @@
 #
 set -eo pipefail
 
+OS=$(uname)
+
 # Variables
 ENV_PGVERSION=17
 IMAGE_NAME="pgagroal-test-postgresql${ENV_PGVERSION}-rocky9"
@@ -46,6 +48,11 @@ COVERAGE_DIR="$PGAGROAL_ROOT_DIR/coverage"
 LOG_DIR="$PGAGROAL_ROOT_DIR/log"
 PG_LOG_DIR="$PGAGROAL_ROOT_DIR/pg_log"
 
+# Local Postgres directories for macOS/FreeBSD CI
+POSTGRES_OPERATION_DIR="$PGAGROAL_ROOT_DIR/pgagroal-postgresql"
+DATA_DIRECTORY="$POSTGRES_OPERATION_DIR/data"
+PGCTL_LOG_FILE="$PG_LOG_DIR/logfile"
+
 # BASE DIR holds all the run time data
 CONFIGURATION_DIRECTORY=$BASE_DIR/conf
 
@@ -58,6 +65,22 @@ PGAGROAL_PORT=2345
 USER=$(whoami)
 MODE="dev"
 PORT=6432
+
+sed_i() {
+  if [[ "$OS" == "Darwin" || "$OS" == "FreeBSD" ]]; then
+    sed -i '' -E "$@"
+  else
+    sed -i -E "$@"
+  fi
+}
+
+run_as_postgres() {
+  if [[ "$OS" == "FreeBSD" ]]; then
+    su - postgres -c "$*"
+  else
+    eval "$@"
+  fi
+}
 
 # Detect container engine: Docker or Podman
 if command -v docker &> /dev/null; then

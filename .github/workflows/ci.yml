@@ -308,7 +308,8 @@ jobs:
               hs-pandoc \
               texlive-base \
               texlive-texmf \
-              graphviz 
+              graphviz \
+              podman
             # Initialize Graphviz plugins after installation
             dot -c
       - name: Build Project
@@ -318,6 +319,14 @@ jobs:
           cd $GITHUB_WORKSPACE/build
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
           make -j$(sysctl -n hw.ncpu)
+      - name: Create Test User
+        shell: freebsd {0}
+        run: |
+          sudo pw useradd tester -m
+          sudo pw usermod tester -w none
+          sudo pw groupmod wheel -m tester
+          sudo sh -c 'echo "%wheel ALL=(ALL) NOPASSWD: ALL" >> /usr/local/etc/sudoers'
+          sudo chown -R tester:tester "$GITHUB_WORKSPACE"
       - name: Debug Testsuite Path
         shell: freebsd {0}
         run: |
