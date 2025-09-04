@@ -224,7 +224,7 @@ jobs:
         with:
           name: macos-build-logs
           path: |
-            ${{ env.BUILD_DIR }}/log/
+            ${{ env.PGAGROAL_ROOT }}/log/
           retention-days: 7
 
       # - name: Run pgagroal and test
@@ -342,6 +342,6 @@ jobs:
         with:
           name: freebsd-${{ matrix.compiler }}-${{ matrix.build_type }}-logs
           path: |
-            $GITHUB_WORKSPACE/build/log/*
+            ${{ github.workspace }}/log/*
             /tmp/*
           retention-days: 7
