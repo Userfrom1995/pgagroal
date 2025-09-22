@@ -36,6 +36,10 @@
 #include <stdint.h>
 #include <time.h>
 #include <utils.h>
+#include <utf8.h>
+
+/* PostgreSQL UTF-8 support */
+#include "pg_wchar.h"
 
 /* system */
 #include <ctype.h>
@@ -49,6 +53,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#define MAX_PASSWORD_CHARS 256  /* Maximum UTF-8 characters in password */
 
 static int master_key(char* password, bool generate_pwd, int pwd_length, int32_t output_format);
 static int add_user(char* users_path, char* username, char* password, bool generate_pwd, int pwd_length, int32_t output_format);
@@ -621,11 +627,17 @@ password:
       printf("\n");
    }
 
-   for (unsigned long i = 0; i < strlen(password); i++)
+   // Validate UTF-8 password using PostgreSQL's validation (character by character)
+   size_t password_len = strlen(password);
+   const unsigned char* p = (const unsigned char*)password;
+   size_t remaining = password_len;
+   
+   while (remaining > 0)
    {
-      if ((unsigned char)(*(password + i)) & 0x80)
+      int char_len = pg_utf_mblen(p);
+      if (char_len <= 0 || remaining < (size_t)char_len || !pg_utf8_islegal(p, char_len))
       {
-         warnx("Illegal character(s) in password");
+         warnx("Invalid UTF-8 sequence in password. Please use valid UTF-8 encoding.");
          if (do_free)
          {
             free(password);
@@ -633,6 +645,32 @@ password:
          password = NULL;
          goto password;
       }
+      p += char_len;
+      remaining -= char_len;
+   }
+   
+   // Check character count (not byte count) for reasonable limits
+   size_t char_count = pgagroal_utf8_char_length((unsigned char*)password, password_len);
+   if (char_count == (size_t)-1)
+   {
+      warnx("Error counting UTF-8 characters in password");
+      if (do_free)
+      {
+         free(password);
+      }
+      password = NULL;
+      goto password;
+   }
+   
+   if (char_count > MAX_PASSWORD_CHARS)
+   {
+      warnx("Password too long (%zu characters). Maximum allowed: %d characters.", char_count, MAX_PASSWORD_CHARS);
+      if (do_free)
+      {
+         free(password);
+      }
+      password = NULL;
+      goto password;
    }
 
    if (do_verify)
@@ -866,11 +904,17 @@ password:
             printf("\n");
          }
 
-         for (unsigned long i = 0; i < strlen(password); i++)
+         // Validate UTF-8 password using PostgreSQL's validation (character by character)
+         size_t password_len = strlen(password);
+         const unsigned char* p = (const unsigned char*)password;
+         size_t remaining = password_len;
+         
+         while (remaining > 0)
          {
-            if ((unsigned char)(*(password + i)) & 0x80)
+            int char_len = pg_utf_mblen(p);
+            if (char_len <= 0 || remaining < (size_t)char_len || !pg_utf8_islegal(p, char_len))
             {
-               warnx("Illegal character(s) in password");
+               warnx("Invalid UTF-8 sequence in password. Please use valid UTF-8 encoding.");
                if (do_free)
                {
                   free(password);
@@ -878,6 +922,32 @@ password:
                password = NULL;
                goto password;
             }
+            p += char_len;
+            remaining -= char_len;
+         }
+         
+         // Check character count (not byte count) for reasonable limits
+         size_t char_count = pgagroal_utf8_char_length((unsigned char*)password, password_len);
+         if (char_count == (size_t)-1)
+         {
+            warnx("Error counting UTF-8 characters in password");
+            if (do_free)
+            {
+               free(password);
+            }
+            password = NULL;
+            goto password;
+         }
+         
+         if (char_count > MAX_PASSWORD_CHARS)
+         {
+            warnx("Password too long (%zu characters). Maximum allowed: %d characters.", char_count, MAX_PASSWORD_CHARS);
+            if (do_free)
+            {
+               free(password);
+            }
+            password = NULL;
+            goto password;
          }
 
          if (do_verify)

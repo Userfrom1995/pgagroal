@@ -4,7 +4,25 @@
 FILE(GLOB SOURCE_FILES "libpgagroal/*.c")
 FILE(GLOB HEADER_FILES "include/*.h")
 
-set(SOURCES ${SOURCE_FILES} ${HEADER_FILES})
+#
+# Add UTF-8 support files (essential ones with full crypto dependencies)
+#
+set(UTF8_SOURCE_FILES
+    libpgagroal/utf8_wrapper.c
+    utf8/common/saslprep.c
+    utf8/common/wchar.c
+    utf8/common/string.c
+    utf8/common/unicode_norm.c
+    utf8/common/scram-common.c
+    utf8/common/base64.c
+    utf8/common/hmac.c
+    utf8/common/cryptohash.c
+    utf8/common/sha2.c
+)
+
+FILE(GLOB UTF8_HEADER_FILES "utf8/common_header/*.h")
+
+set(SOURCES ${SOURCE_FILES} ${HEADER_FILES} ${UTF8_SOURCE_FILES} ${UTF8_HEADER_FILES})
 
 #
 # OS
@@ -19,6 +37,7 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/common_header
     ${OPENSSL_INCLUDE_DIR}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
@@ -83,6 +102,7 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/common_header
     ${OPENSSL_INCLUDE_DIRS}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
@@ -127,6 +147,7 @@ else()
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/common_header
     ${OPENSSL_INCLUDE_DIRS}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}

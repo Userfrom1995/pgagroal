@@ -39,6 +39,11 @@
 #include <server.h>
 #include <tracker.h>
 #include <utils.h>
+#include <utf8.h>
+
+/* PostgreSQL UTF-8 support */
+#include "saslprep.h"
+#include "pg_wchar.h"
 
 /* system */
 #include <stdatomic.h>
@@ -3539,28 +3544,42 @@ error:
 static int
 sasl_prep(char* password, char** password_prep)
 {
-   char* p = NULL;
-
-   /* Only support ASCII for now */
-   for (unsigned long i = 0; i < strlen(password); i++)
+   if (password == NULL || password_prep == NULL)
    {
-      if ((unsigned char)(*(password + i)) & 0x80)
-      {
-         goto error;
-      }
+      return 1;
    }
-
-   p = strdup(password);
-
-   *password_prep = p;
-
-   return 0;
-
-error:
-
-   *password_prep = NULL;
-
-   return 1;
+   
+   // Use PostgreSQL's pg_saslprep function directly
+   pg_saslprep_rc result = pg_saslprep(password, password_prep);
+   
+   switch (result)
+   {
+      case SASLPREP_SUCCESS:
+         pgagroal_log_trace("SASLprep normalization successful");
+         return 0;
+         
+      case SASLPREP_OOM:
+         pgagroal_log_error("SASLprep failed: out of memory");
+         return 1;
+         
+      case SASLPREP_INVALID_UTF8:
+         // PostgreSQL compatibility: use raw password bytes for invalid UTF-8
+         pgagroal_log_debug("Invalid UTF-8 in password, using raw bytes for SCRAM");
+         *password_prep = strdup(password);
+         return (*password_prep == NULL) ? 1 : 0;
+         
+      case SASLPREP_PROHIBITED:
+         // PostgreSQL compatibility: use raw password bytes for prohibited characters
+         pgagroal_log_debug("Prohibited characters in password, using raw bytes for SCRAM");
+         *password_prep = strdup(password);
+         return (*password_prep == NULL) ? 1 : 0;
+         
+      default:
+         // Fallback to raw password bytes
+         pgagroal_log_debug("SASLprep failed with code %d, using raw bytes for SCRAM", result);
+         *password_prep = strdup(password);
+         return (*password_prep == NULL) ? 1 : 0;
+   }
 }
 
 static int
