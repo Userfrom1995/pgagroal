@@ -5,19 +5,19 @@ FILE(GLOB SOURCE_FILES "libpgagroal/*.c")
 FILE(GLOB HEADER_FILES "include/*.h")
 
 #
-# Add UTF-8 support files (essential ones with full crypto dependencies)
+# Add PostgreSQL UTF-8 support files
 #
-set(UTF8_SOURCE_FILES
+set(POSTGRESQL_SOURCE_FILES
     libpgagroal/utf8.c
-    utf8/common/saslprep.c
-    utf8/common/wchar.c
-    utf8/common/string.c
-    utf8/common/unicode_norm.c
+    postgresql/common/saslprep.c
+    postgresql/common/wchar.c
+    postgresql/common/string.c
+    postgresql/common/unicode_norm.c
 )
 
-FILE(GLOB UTF8_HEADER_FILES "utf8/common_header/*.h")
+FILE(GLOB POSTGRESQL_HEADER_FILES "postgresql/include/*.h")
 
-set(SOURCES ${SOURCE_FILES} ${HEADER_FILES} ${UTF8_SOURCE_FILES} ${UTF8_HEADER_FILES})
+set(SOURCES ${SOURCE_FILES} ${HEADER_FILES} ${POSTGRESQL_SOURCE_FILES} ${POSTGRESQL_HEADER_FILES})
 
 #
 # OS
@@ -32,7 +32,7 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/common_header
+    ${CMAKE_CURRENT_SOURCE_DIR}/postgresql/include
     ${OPENSSL_INCLUDE_DIR}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
@@ -97,7 +97,7 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/common_header
+    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/include
     ${OPENSSL_INCLUDE_DIRS}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
@@ -142,7 +142,7 @@ else()
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/common_header
+    ${CMAKE_CURRENT_SOURCE_DIR}/utf8/include
     ${OPENSSL_INCLUDE_DIRS}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
