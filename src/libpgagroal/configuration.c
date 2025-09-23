@@ -1585,7 +1585,7 @@ pgagroal_read_users_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Validate UTF-8 password after decryption
+         // Strict UTF-8 validation after decryption using wrapper
          char* validated_password = pgagroal_validate_utf8_password(password, username);
          if (!validated_password)
          {
@@ -1593,7 +1593,7 @@ pgagroal_read_users_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Check character length, not just byte length
+         // Check character length using wrapper function
          size_t char_count = pgagroal_utf8_char_length((unsigned char*)validated_password, 
                                                        strlen(validated_password));
          
@@ -1727,7 +1727,7 @@ pgagroal_read_frontend_users_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Validate UTF-8 password after decryption
+         // Strict UTF-8 validation after decryption using wrapper
          char* validated_password = pgagroal_validate_utf8_password(password, username);
          if (!validated_password)
          {
@@ -1735,7 +1735,7 @@ pgagroal_read_frontend_users_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Check character length, not just byte length
+         // Check character length using wrapper function
          size_t char_count = pgagroal_utf8_char_length((unsigned char*)validated_password, 
                                                        strlen(validated_password));
          
@@ -1894,7 +1894,7 @@ pgagroal_read_admins_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Validate UTF-8 password after decryption
+         // Strict UTF-8 validation after decryption using wrapper
          char* validated_password = pgagroal_validate_utf8_password(password, username);
          if (!validated_password)
          {
@@ -1902,7 +1902,7 @@ pgagroal_read_admins_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Check character length, not just byte length
+         // Check character length using wrapper function
          size_t char_count = pgagroal_utf8_char_length((unsigned char*)validated_password, 
                                                        strlen(validated_password));
          
@@ -2027,7 +2027,7 @@ pgagroal_vault_read_users_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Validate UTF-8 password after decryption
+         // Strict UTF-8 validation after decryption using wrapper
          char* validated_password = pgagroal_validate_utf8_password(password, username);
          if (!validated_password)
          {
@@ -2035,7 +2035,7 @@ pgagroal_vault_read_users_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Check character length, not just byte length
+         // Check character length using wrapper function
          size_t char_count = pgagroal_utf8_char_length((unsigned char*)validated_password, 
                                                        strlen(validated_password));
          
@@ -2182,7 +2182,7 @@ pgagroal_read_superuser_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Validate UTF-8 password after decryption
+         // Strict UTF-8 validation after decryption using wrapper
          char* validated_password = pgagroal_validate_utf8_password(password, username);
          if (!validated_password)
          {
@@ -2190,7 +2190,7 @@ pgagroal_read_superuser_configuration(void* shm, char* filename)
             goto error;
          }
 
-         // Check character length, not just byte length
+         // Check character length using wrapper function
          size_t char_count = pgagroal_utf8_char_length((unsigned char*)validated_password, 
                                                        strlen(validated_password));
          
