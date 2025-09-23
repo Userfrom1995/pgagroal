@@ -13,7 +13,18 @@
 #include <stdio.h>
 #include <ctype.h>
 
+/* Platform-specific endian headers */
+#ifdef __APPLE__
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+#define htobe32(x) OSSwapHostToBigInt32(x)
+#define be32toh(x) OSSwapBigToHostInt32(x)
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/endian.h>
+#else
 #include <endian.h>
+#endif
+
 #ifndef htobe32
 #ifdef __BYTE_ORDER__
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
