@@ -8,16 +8,11 @@ FILE(GLOB HEADER_FILES "include/*.h")
 # Add UTF-8 support files (essential ones with full crypto dependencies)
 #
 set(UTF8_SOURCE_FILES
-    libpgagroal/utf8_wrapper.c
+    libpgagroal/utf8.c
     utf8/common/saslprep.c
     utf8/common/wchar.c
     utf8/common/string.c
     utf8/common/unicode_norm.c
-    utf8/common/scram-common.c
-    utf8/common/base64.c
-    utf8/common/hmac.c
-    utf8/common/cryptohash.c
-    utf8/common/sha2.c
 )
 
 FILE(GLOB UTF8_HEADER_FILES "utf8/common_header/*.h")
