@@ -42,8 +42,8 @@
 #include <utf8.h>
 
 /* PostgreSQL UTF-8 support */
-#include "saslprep.h"
-#include "pg_wchar.h"
+#include "common/saslprep.h"
+#include "common/pg_wchar.h"
 
 /* system */
 #include <stdatomic.h>
