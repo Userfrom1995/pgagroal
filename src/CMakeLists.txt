@@ -140,7 +140,6 @@ else()
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/postgresql/include
     ${OPENSSL_INCLUDE_DIRS}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
