@@ -39,7 +39,7 @@
 #include <utf8.h>
 
 /* PostgreSQL UTF-8 support */
-#include "pg_wchar.h"
+#include "common/pg_wchar.h"
 
 /* system */
 #include <ctype.h>
