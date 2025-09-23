@@ -86,7 +86,7 @@ pg_ascii2wchar_with_len(const unsigned char *from, pg_wchar *to, int len)
 }
 
 static int
-pg_ascii_mblen(const unsigned char *s)
+pg_ascii_mblen(const unsigned char *s __attribute__((unused)))
 {
 	return 1;
 }
@@ -877,7 +877,7 @@ pg_wchar2single_with_len(const pg_wchar *from, unsigned char *to, int len)
 }
 
 static int
-pg_latin1_mblen(const unsigned char *s)
+pg_latin1_mblen(const unsigned char *s __attribute__((unused)))
 {
 	return 1;
 }
@@ -1064,7 +1064,7 @@ pg_gb18030_dsplen(const unsigned char *s)
  *-------------------------------------------------------------------
  */
 static int
-pg_ascii_verifychar(const unsigned char *s, int len)
+pg_ascii_verifychar(const unsigned char *s __attribute__((unused)), int len __attribute__((unused)))
 {
 	return 1;
 }
@@ -1411,7 +1411,7 @@ pg_mule_verifystr(const unsigned char *s, int len)
 }
 
 static int
-pg_latin1_verifychar(const unsigned char *s, int len)
+pg_latin1_verifychar(const unsigned char *s __attribute__((unused)), int len __attribute__((unused)))
 {
 	return 1;
 }
