@@ -202,6 +202,7 @@ if (DOXYGEN_FOUND)
   set(DOXYGEN_GENERATE_HTML YES)
   set(DOXYGEN_GENERATE_MAN NO)
   set(DOXYGEN_WARN_AS_ERROR FAIL_ON_WARNINGS)
+  set(DOXYGEN_EXCLUDE_PATTERNS "*/common/*")
   set(DOXYFILE_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.doxygen)
 
   doxygen_add_docs(doxygen ${PROJECT_SOURCE_DIR}/src/include/)
