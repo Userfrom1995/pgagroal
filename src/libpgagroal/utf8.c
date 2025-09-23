@@ -86,7 +86,7 @@ pgagroal_validate_utf8_password(char* password, char* username)
    // Fast path for ASCII using PostgreSQL's function
    if (pg_is_ascii(password))
    {
-      pgagroal_log_trace("Password for user '%s' is ASCII", username);
+      pgagroal_log_debug("Password for user '%s' is ASCII", username);
       return strdup(password);
    }
    
