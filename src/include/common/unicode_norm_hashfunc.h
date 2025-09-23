@@ -17,7 +17,7 @@
  * here.
  */
 
-#include "common/unicode_norm_table.h"
+#include "unicode_norm_table.h"
 
 /* Typedef for perfect hash functions */
 typedef int (*cp_hash_func) (const void *key);

@@ -9,13 +9,13 @@ FILE(GLOB HEADER_FILES "include/*.h")
 #
 set(POSTGRESQL_SOURCE_FILES
     libpgagroal/utf8.c
-    postgresql/common/saslprep.c
-    postgresql/common/wchar.c
-    postgresql/common/string.c
-    postgresql/common/unicode_norm.c
+    libpgagroal/common/saslprep.c
+    libpgagroal/common/wchar.c
+    libpgagroal/common/string.c
+    libpgagroal/common/unicode_norm.c
 )
 
-FILE(GLOB POSTGRESQL_HEADER_FILES "postgresql/include/*.h")
+FILE(GLOB POSTGRESQL_HEADER_FILES "include/common/*.h")
 
 set(SOURCES ${SOURCE_FILES} ${HEADER_FILES} ${POSTGRESQL_SOURCE_FILES} ${POSTGRESQL_HEADER_FILES})
 
@@ -32,7 +32,6 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/postgresql/include
     ${OPENSSL_INCLUDE_DIR}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}
@@ -97,7 +96,6 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
   #
   include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/postgresql/include
     ${OPENSSL_INCLUDE_DIRS}
     ${THREAD_INCLUDE_DIRS}
     ${ZLIB_INCLUDE_DIRS}

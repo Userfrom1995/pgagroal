@@ -19,16 +19,16 @@
  *
  *-------------------------------------------------------------------------
  */
-#include "postgres_compat.h"
+#include "common/postgres_compat.h"
 
 #ifdef __GNUC__
   #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
-#include "saslprep.h"
-#include "pg_string.h"
-#include "unicode_norm.h"
-#include "pg_wchar.h"
+#include "common/saslprep.h"
+#include "common/pg_string.h"
+#include "common/unicode_norm.h"
+#include "common/pg_wchar.h"
 
 /*
  * In backend, we will use palloc/pfree.  In frontend, use malloc, and

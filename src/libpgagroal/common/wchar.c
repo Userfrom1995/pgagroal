@@ -10,7 +10,7 @@
  *
  *-------------------------------------------------------------------------
  */
-#include "postgres_compat.h"
+#include "common/postgres_compat.h"
 
 #ifdef __GNUC__
   #pragma GCC diagnostic ignored "-Wsign-compare"
@@ -18,8 +18,8 @@
 
 #include <limits.h>
 
-#include "pg_wchar.h"
-#include "ascii.h"
+#include "common/pg_wchar.h"
+#include "common/ascii.h"
 
 
 /*
@@ -631,8 +631,8 @@ mbbisearch(pg_wchar ucs, const struct mbinterval *table, int max)
 static int
 ucs_wcwidth(pg_wchar ucs)
 {
-#include "unicode_nonspacing_table.h"
-#include "unicode_east_asian_fw_table.h"
+#include "common/unicode_nonspacing_table.h"
+#include "common/unicode_east_asian_fw_table.h"
 
 	/* test for 8-bit control characters */
 	if (ucs == 0)

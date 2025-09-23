@@ -12,19 +12,19 @@
  *
  *-------------------------------------------------------------------------
  */
-#include "postgres_compat.h"
+#include "common/postgres_compat.h"
 
 #ifdef __GNUC__
   #pragma GCC diagnostic ignored "-Wsign-compare"
 #endif
 
-#include "unicode_norm.h"
+#include "common/unicode_norm.h"
 #ifndef FRONTEND
-#include "unicode_norm_hashfunc.h"
-#include "unicode_normprops_table.h"
-#include "pg_bswap.h"
+#include "common/unicode_norm_hashfunc.h"
+#include "common/unicode_normprops_table.h"
+#include "common/pg_bswap.h"
 #else
-#include "unicode_norm_table.h"
+#include "common/unicode_norm_table.h"
 #endif
 
 #ifndef FRONTEND

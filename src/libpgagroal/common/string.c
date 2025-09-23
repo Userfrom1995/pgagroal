@@ -15,9 +15,9 @@
  */
 
 
-#include "postgres_compat.h"
+#include "common/postgres_compat.h"
 
-#include "pg_string.h"
+#include "common/pg_string.h"
 #include <errno.h>
 
 
