@@ -3,15 +3,16 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - utf-8_only
   pull_request:
     branches:
-      - master
+      - utf-8_only
   workflow_dispatch:
 
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       matrix:
         compiler: [gcc, clang]
