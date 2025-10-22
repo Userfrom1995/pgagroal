@@ -86,4 +86,4 @@ pgagroal-admin user-add -U luca -P strongPassword 2>/dev/null
 ## Shell completion
 
 There is a minimal shell completion support for `pgagroal-admin`.
-See the [Install pgagroal](https://github.com/agroal/pgagroal/blob/master/doc/tutorial/01_install.md) for more details.
+See the [Installation documentation](https://github.com/agroal/pgagroal/blob/master/doc/manual/en/02-installation.md#shell-completion) for more details.

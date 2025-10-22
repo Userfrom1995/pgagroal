@@ -174,3 +174,66 @@ Start [**pgagroal**][pgagroal] now, by
 ```
 pgagroal -d
 ```
+
+## Shell Completion
+
+pgagroal provides shell completion support for both `pgagroal-cli` and `pgagroal-admin` commands in bash and zsh shells.
+
+### Installation
+
+The shell completion scripts are located in the `contrib/shell_comp/` directory:
+- `pgagroal_comp.bash` - Bash completion script
+- `pgagroal_comp.zsh` - Zsh completion script
+
+#### Bash Completion
+
+To enable bash completion, source the bash completion script:
+
+```bash
+# For current session only
+source /path/to/pgagroal/contrib/shell_comp/pgagroal_comp.bash
+
+# For permanent installation, add to your ~/.bashrc
+echo "source /path/to/pgagroal/contrib/shell_comp/pgagroal_comp.bash" >> ~/.bashrc
+```
+
+If pgagroal is installed via package manager, the completion script may be available in:
+```bash
+# System-wide installation
+source /usr/share/doc/pgagroal/shell_comp/pgagroal_comp.bash
+```
+
+#### Zsh Completion
+
+To enable zsh completion, source the zsh completion script:
+
+```zsh
+# For current session only
+source /path/to/pgagroal/contrib/shell_comp/pgagroal_comp.zsh
+
+# For permanent installation, add to your ~/.zshrc
+echo "source /path/to/pgagroal/contrib/shell_comp/pgagroal_comp.zsh" >> ~/.zshrc
+```
+
+### Usage
+
+Once enabled, you can use tab completion with pgagroal commands:
+
+```bash
+# Tab completion for pgagroal-cli commands
+pgagroal-cli <TAB>
+# Shows: flush ping enable disable shutdown status switch-to conf clear
+
+# Tab completion for flush subcommands
+pgagroal-cli flush <TAB>
+# Shows: gracefully idle all
+
+# Tab completion for pgagroal-admin commands
+pgagroal-admin <TAB>
+# Shows available admin commands
+```
+
+The completion scripts provide intelligent suggestions for:
+- Available commands and subcommands
+- Command options and flags
+- Database names (where applicable)
