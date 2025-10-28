@@ -1379,8 +1379,16 @@ ev_kqueue_io_start(struct io_watcher* watcher)
 
    if (kevent(loop->kqueuefd, &kev, 1, NULL, 0, NULL) == -1)
    {
-      pgagroal_log_error("kevent error: %s", strerror(errno));
-      return PGAGROAL_EVENT_RC_ERROR;
+      if (errno == EBADF)
+      {
+         /* File descriptor already closed - this is normal in transaction pipeline */
+         pgagroal_log_debug("kevent: fd already closed: %s", strerror(errno));
+      }
+      else
+      {
+         pgagroal_log_error("kevent error: %s", strerror(errno));
+         return PGAGROAL_EVENT_RC_ERROR;
+      }
    }
 
    return PGAGROAL_EVENT_RC_OK;
@@ -1395,15 +1403,31 @@ ev_kqueue_io_stop(struct io_watcher* watcher)
    EV_SET(&kev, watcher->fds.__fds[0], filter, EV_DELETE, 0, 0, NULL);
    if (kevent(loop->kqueuefd, &kev, 1, NULL, 0, NULL) == -1)
    {
-      pgagroal_log_error("%s: kevent delete failed", __func__);
-      return PGAGROAL_EVENT_RC_ERROR;
+      if (errno == EBADF || errno == ENOENT)
+      {
+         /* File descriptor already closed or event not found - normal in transaction pipeline */
+         pgagroal_log_debug("%s: kevent delete on closed/invalid fd[0]: %s", __func__, strerror(errno));
+      }
+      else
+      {
+         pgagroal_log_error("%s: kevent delete failed for fd[0]: %s", __func__, strerror(errno));
+         return PGAGROAL_EVENT_RC_ERROR;
+      }
    }
 
    EV_SET(&kev, watcher->fds.__fds[1], filter, EV_DELETE, 0, 0, NULL);
    if (kevent(loop->kqueuefd, &kev, 1, NULL, 0, NULL) == -1)
    {
-      pgagroal_log_error("%s: kevent delete failed", __func__);
-      return PGAGROAL_EVENT_RC_ERROR;
+      if (errno == EBADF || errno == ENOENT)
+      {
+         /* File descriptor already closed or event not found - normal in transaction pipeline */
+         pgagroal_log_debug("%s: kevent delete on closed/invalid fd[1]: %s", __func__, strerror(errno));
+      }
+      else
+      {
+         pgagroal_log_error("%s: kevent delete failed for fd[1]: %s", __func__, strerror(errno));
+         return PGAGROAL_EVENT_RC_ERROR;
+      }
    }
 
    return PGAGROAL_EVENT_RC_OK;
