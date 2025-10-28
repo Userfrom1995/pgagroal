@@ -796,13 +796,23 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
    if (!watcher)
    {
       rc = cqe->res;
-      if (rc == -ENOENT || rc == -EINVAL)
+      if (rc == -ENOENT)
       {
-         /* shouldn't happen */
-         pgagroal_log_fatal("io_uring_prep_cancel error: %s", strerror(-rc));
+         /* Operation not found - normal in high-load scenarios */
+         pgagroal_log_trace("io_uring_prep_cancel: operation not found: %s", strerror(-rc));
       }
-      if (rc == -EALREADY)
+      else if (rc == -EINVAL)
       {
+         /* Invalid operation - log but continue */
+         pgagroal_log_debug("io_uring_prep_cancel: invalid operation: %s", strerror(-rc));
+      }
+      else if (rc == -EALREADY)
+      {
+         pgagroal_log_trace("io_uring_prep_cancel: operation already in progress: %s", strerror(-rc));
+      }
+      else if (rc < 0)
+      {
+         /* Other errors - log but don't fatal */
          pgagroal_log_warn("io_uring_prep_cancel error: %s", strerror(-rc));
       }
       return PGAGROAL_EVENT_RC_OK;
