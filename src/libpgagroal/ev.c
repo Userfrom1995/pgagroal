@@ -1089,8 +1089,21 @@ ev_epoll_io_start(struct io_watcher* watcher)
 
    if (epoll_ctl(loop->epollfd, EPOLL_CTL_ADD, fd, &event) == -1)
    {
-      pgagroal_log_error("epoll_ctl error when adding fd %d : %s", fd, strerror(errno));
-      return PGAGROAL_EVENT_RC_FATAL;
+      if (errno == EEXIST)
+      {
+         /* FD already exists, modify it instead */
+         pgagroal_log_debug("epoll_ctl: fd %d already exists, modifying instead", fd);
+         if (epoll_ctl(loop->epollfd, EPOLL_CTL_MOD, fd, &event) == -1)
+         {
+            pgagroal_log_error("epoll_ctl error when modifying fd %d : %s", fd, strerror(errno));
+            return PGAGROAL_EVENT_RC_FATAL;
+         }
+      }
+      else
+      {
+         pgagroal_log_error("epoll_ctl error when adding fd %d : %s", fd, strerror(errno));
+         return PGAGROAL_EVENT_RC_FATAL;
+      }
    }
 
    return PGAGROAL_EVENT_RC_OK;

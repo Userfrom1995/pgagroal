@@ -468,7 +468,8 @@ transaction_server(struct io_watcher* watcher)
       {
          if (has_z && !in_tx && slot != -1)
          {
-            pgagroal_io_stop(&server_io.io);
+            /* Don't stop I/O watcher here - let it continue for connection reuse */
+            /* pgagroal_io_stop(&server_io.io); */
 
             if (deallocate)
             {
@@ -489,7 +490,8 @@ transaction_server(struct io_watcher* watcher)
       {
          if (has_z && !in_tx && slot != -1)
          {
-            pgagroal_io_stop(&server_io.io);
+            /* Don't stop I/O watcher in error case either */
+            /* pgagroal_io_stop(&server_io.io); */
 
             exit_code = WORKER_SERVER_FATAL;
             pgagroal_event_loop_break();
