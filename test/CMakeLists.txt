@@ -127,3 +127,8 @@ configure_file(
   "${CMAKE_BINARY_DIR}/check.sh"
   COPYONLY
 )
+configure_file(
+  "${CMAKE_SOURCE_DIR}/test/testsuite.sh"
+  "${CMAKE_BINARY_DIR}/testsuite.sh"
+  COPYONLY
+)
