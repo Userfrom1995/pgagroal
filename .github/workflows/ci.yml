@@ -172,7 +172,7 @@ jobs:
         run: |
           brew update
           brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen
-          # brew install postgresql${POSTGRESQL_VERSION}
+          brew install postgresql${POSTGRESQL_VERSION}
           
       - name: Add PostgreSQL to Path
         run: |
@@ -242,7 +242,7 @@ jobs:
 
       - name: Stop PostgreSQL
         run: |
-          brew services stop postgresql@14
+          brew services stop postgresql@17
         if: always()
 
 
