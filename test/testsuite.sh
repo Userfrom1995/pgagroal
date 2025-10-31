@@ -502,7 +502,7 @@ create_database_alias_config() {
 #
 # DATABASE=ALIAS1,ALIAS2 USER MAX_SIZE INITIAL_SIZE MIN_SIZE
 #
-postgres=pgalias1,pgalias2 $PSQL_USER 8 0 0
+postgres=pgalias1,pgalias2 $PSQL_USER 8 8 8
 EOF
 
     echo "create pgagroal_databases.conf inside $CONFIGURATION_DIRECTORY ... ok"
