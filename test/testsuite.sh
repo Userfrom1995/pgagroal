@@ -363,7 +363,7 @@ initialize_cluster() {
         clean
         exit 1
     fi
-    err_out=$(psql -h localhost -p $PORT -U postgres -d postgres -c "CREATE ROLE myuser WITH LOGIN PASSWORD '$PGPASSWORD';" 2>&1)
+    err_out=$(psql -h localhost -p $PORT -U $USER -d postgres -c "CREATE ROLE myuser WITH LOGIN PASSWORD '$PGPASSWORD';" 2>&1)
     if [ $? -ne 0 ]; then
         echo "create role myuser ... $err_out"
         stop_pgctl
@@ -372,7 +372,7 @@ initialize_cluster() {
     else
         echo "create role myuser ... ok"
     fi
-    err_out=$(psql -h localhost -p $PORT -U postgres -d postgres -c "CREATE DATABASE mydb WITH OWNER myuser;" 2>&1)
+    err_out=$(psql -h localhost -p $PORT -U $USER -d postgres -c "CREATE DATABASE mydb WITH OWNER myuser;" 2>&1)
     if [ $? -ne 0 ]; then
         echo "create a database mydb with owner myuser ... $err_out"
         stop_pgctl
