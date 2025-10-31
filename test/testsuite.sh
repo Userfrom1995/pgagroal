@@ -9,10 +9,8 @@ THIS_FILE=$(realpath "$0")
 USER=$(whoami)
 WAIT_TIMEOUT=5
 
-PSQL_USER=$USER
-if [ "$OS" = "FreeBSD" ]; then
-  PSQL_USER=postgres
-fi
+PSQL_USER=myuser
+
 
 ## Default values
 PGAGROAL_PORT=2345
@@ -365,7 +363,7 @@ initialize_cluster() {
         clean
         exit 1
     fi
-    err_out=$(psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c "CREATE ROLE myuser WITH LOGIN PASSWORD '$PGPASSWORD';" 2>&1)
+    err_out=$(psql -h localhost -p $PORT -U postgres -d postgres -c "CREATE ROLE myuser WITH LOGIN PASSWORD '$PGPASSWORD';" 2>&1)
     if [ $? -ne 0 ]; then
         echo "create role myuser ... $err_out"
         stop_pgctl
@@ -374,7 +372,7 @@ initialize_cluster() {
     else
         echo "create role myuser ... ok"
     fi
-    err_out=$(psql -h localhost -p $PORT -U $PSQL_USER -d postgres -c "CREATE DATABASE mydb WITH OWNER myuser;" 2>&1)
+    err_out=$(psql -h localhost -p $PORT -U postgres -d postgres -c "CREATE DATABASE mydb WITH OWNER myuser;" 2>&1)
     if [ $? -ne 0 ]; then
         echo "create a database mydb with owner myuser ... $err_out"
         stop_pgctl
@@ -383,14 +381,14 @@ initialize_cluster() {
     else
         echo "create a database mydb with owner myuser ... ok"
     fi
-    err_out=$(pgbench -i -s 1 -n -h localhost -p $PORT -U $PSQL_USER -d postgres 2>&1)
+    err_out=$(pgbench -i -s 1 -n -h localhost -p $PORT -U myuser -d mydb 2>&1)
     if [ $? -ne 0 ]; then
         echo "initialize pgbench ... $err_out"
         stop_pgctl
         clean
         exit 1
     else
-        echo "initialize pgbench on user: $PSQL_USER and database: postgres ... ok"
+        echo "initialize pgbench on user: myuser and database: mydb ... ok"
     fi
     set -e
     stop_pgctl
@@ -481,13 +479,13 @@ create_users_configuration() {
         rm -f "$CONFIGURATION_DIRECTORY/pgagroal_users.conf"
     fi
     
-    echo "=== DEBUG: Adding $PSQL_USER to pgagroal_users.conf ==="
-    run_as_postgres "$EXECUTABLE_DIRECTORY/pgagroal-admin -f $CONFIGURATION_DIRECTORY/pgagroal_users.conf -U $PSQL_USER -P $PGPASSWORD user add"
+    echo "=== DEBUG: Adding myuser to pgagroal_users.conf ==="
+    run_as_postgres "$EXECUTABLE_DIRECTORY/pgagroal-admin -f $CONFIGURATION_DIRECTORY/pgagroal_users.conf -U myuser -P $PGPASSWORD user add"
     user_add_result=$?
-    echo "User add result for $PSQL_USER: $user_add_result"
+    echo "User add result for myuser: $user_add_result"
     
     if [ $user_add_result -ne 0 ]; then
-        echo "Failed to add user $PSQL_USER"
+        echo "Failed to add user myuser"
         exit 1
     fi
     
@@ -502,7 +500,7 @@ create_database_alias_config() {
 #
 # DATABASE=ALIAS1,ALIAS2 USER MAX_SIZE INITIAL_SIZE MIN_SIZE
 #
-postgres=pgalias1,pgalias2 $PSQL_USER 8 8 8
+mydb=pgalias1,pgalias2 myuser 8 8 8
 EOF
 
     echo "create pgagroal_databases.conf inside $CONFIGURATION_DIRECTORY ... ok"
@@ -587,7 +585,7 @@ execute_testcases() {
     fi
 
     ### RUN TESTCASES ###
-    run_as_postgres "$TEST_DIRECTORY/pgagroal_test $PROJECT_DIRECTORY"
+    run_as_postgres "$TEST_DIRECTORY/pgagroal_test $PROJECT_DIRECTORY myuser mydb"
     if [ $? -ne 0 ]; then
         stop_pgctl
         clean

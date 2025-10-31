@@ -99,7 +99,7 @@ pgagroal_tsclient_destroy()
 }
 
 int
-pgagroal_tsclient_execute_pgbench(char* database, bool select_only, int client_count, int thread_count, int transaction_count)
+pgagroal_tsclient_execute_pgbench(char* user, char* database, bool select_only, int client_count, int thread_count, int transaction_count)
 {
    char* command = NULL;
    char* log_file_path = NULL;
@@ -145,6 +145,10 @@ pgagroal_tsclient_execute_pgbench(char* database, bool select_only, int client_c
 
    command = pgagroal_append(command, "-p ");
    command = pgagroal_append_int(command, config->common.port);
+   command = pgagroal_append_char(command, ' ');
+
+   command = pgagroal_append(command, "-U ");
+   command = pgagroal_append(command, user);
    command = pgagroal_append_char(command, ' ');
 
    command = pgagroal_append(command, "-d ");

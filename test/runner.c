@@ -35,9 +35,9 @@ int
 main(int argc, char* argv[])
 {
 
-   if (argc != 2)
+   if (argc != 4)
    {
-      printf("Usage: %s <project_directory>\n", argv[0]);
+      printf("Usage: %s <project_directory> <user> <database>\n", argv[0]);
       return 1;
    }
 
@@ -45,6 +45,9 @@ main(int argc, char* argv[])
    Suite* s1;
    Suite* s2;
    SRunner* sr;
+
+   user = strdup(argv[2]);
+   database = strdup(argv[3]);
 
    if (pgagroal_tsclient_init(argv[1]))
    {
