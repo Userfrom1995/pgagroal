@@ -212,7 +212,7 @@ jobs:
       
       - name: Run tests with Clang build
         working-directory: ${{ env.BUILD_DIR }}
-        run: $(which bash) ./testsuite.sh
+        run: $(which bash) ./testsuite.sh run-configs
   
       - name: Clean up after Clang tests
         working-directory: ${{ env.BUILD_DIR }}
