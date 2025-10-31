@@ -45,6 +45,8 @@ extern "C" {
 #define PGAGROAL_CONFIGURATION_TRAIL    "/pgagroal-testsuite/conf/pgagroal.conf"
 
 extern char project_directory[BUFFER_SIZE];
+extern char* test_user;
+extern char* test_database;
 
 /**
  * Initialize the tsclient API
@@ -64,6 +66,7 @@ pgagroal_tsclient_destroy();
 /**
  * A wrapper around pgbench specific to our usecase [benchmark options supported: '-c', '-j', '-t']
  * Execute a pgbench command for a set of instructions, assuming we are connecting to the 1st server
+ * @param user name of the user
  * @param database name of the database
  * @param select_only true if we are only doing selects
  * @param client_count number of clients
@@ -72,7 +75,7 @@ pgagroal_tsclient_destroy();
  * @return 0 upon success, otherwise 1
  */
 int
-pgagroal_tsclient_execute_pgbench(char* database, bool select_only, int client_count, int thread_count, int transaction_count);
+pgagroal_tsclient_execute_pgbench(char* user, char* database, bool select_only, int client_count, int thread_count, int transaction_count);
 
 #ifdef __cplusplus
 }

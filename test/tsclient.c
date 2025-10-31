@@ -47,6 +47,9 @@
 
 char project_directory[BUFFER_SIZE];
 
+char* test_user = NULL;
+char* test_database = NULL;
+
 static char* get_configuration_path();
 static char* get_log_file_path();
 

@@ -46,8 +46,8 @@ main(int argc, char* argv[])
    Suite* s2;
    SRunner* sr;
 
-   user = strdup(argv[2]);
-   database = strdup(argv[3]);
+   test_user = strdup(argv[2]);
+   test_database = strdup(argv[3]);
 
    if (pgagroal_tsclient_init(argv[1]))
    {

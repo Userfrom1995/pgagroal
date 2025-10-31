@@ -34,7 +34,7 @@
 START_TEST(test_pgagroal_baseline)
 {
    int found = 0;
-   found = !pgagroal_tsclient_execute_pgbench(user, database, true, 8, 0, 1000);
+   found = !pgagroal_tsclient_execute_pgbench(test_user, test_database, true, 8, 0, 1000);
    ck_assert_msg(found, "success status not found");
 }
 
@@ -42,7 +42,7 @@ START_TEST(test_pgagroal_baseline)
 START_TEST(test_pgagroal_database_alias1)
 {
    int found = 0;
-   found = !pgagroal_tsclient_execute_pgbench(user, "pgalias1", true, 8, 0, 10);
+   found = !pgagroal_tsclient_execute_pgbench(test_user, "pgalias1", true, 8, 0, 10);
    ck_assert_msg(found, "Connection to database alias1 failed");
 }
 
@@ -50,7 +50,7 @@ START_TEST(test_pgagroal_database_alias1)
 START_TEST(test_pgagroal_database_alias2)
 {
    int found = 0;
-   found = !pgagroal_tsclient_execute_pgbench(user, "pgalias2", true, 8, 0, 10);
+   found = !pgagroal_tsclient_execute_pgbench(test_user, "pgalias2", true, 8, 0, 10);
    ck_assert_msg(found, "Connection to database alias2 failed");
 }
 
@@ -60,10 +60,10 @@ START_TEST(test_pgagroal_dual_connection)
    int found1 = 0, found2 = 0;
 
    // Connect with original name
-   found1 = !pgagroal_tsclient_execute_pgbench(user, database, true, 1, 0, 5);
+   found1 = !pgagroal_tsclient_execute_pgbench(test_user, test_database, true, 1, 0, 5);
 
    // Connect with alias name
-   found2 = !pgagroal_tsclient_execute_pgbench(user, "pgalias1", true, 1, 0, 5);
+   found2 = !pgagroal_tsclient_execute_pgbench(test_user, "pgalias1", true, 1, 0, 5);
 
    ck_assert_msg(found1 && found2, "Both original and alias connections should work");
 }
