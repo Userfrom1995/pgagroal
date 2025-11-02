@@ -475,12 +475,17 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
    int send_flags = 0;
+   
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: ENTER - fd=%d, msg_length=%zu", 
+                      watcher->fds.worker.snd_fd, msg->length);
+   
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
    msg->data = data;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: Getting SQE");
    sqe = io_uring_get_sqe(&loop->ring);
    io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
 
@@ -488,16 +493,24 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    /* XXX: Implement zero copy send (this has been shown to speed up a little some
     * workloads, but the implementation is still problematic). */
    // send_flags |= MSG_WAITALL;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: Preparing zero-copy send");
    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: Submitting to io_uring");
    io_uring_submit(&loop->ring);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: WAITING for CQE (THIS IS WHERE IT BLOCKS)");
    io_uring_wait_cqe(&loop->ring, &cqe);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: CQE received");
    sent_bytes = msg->length;
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: Preparing send");
    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: Submitting to io_uring");
    io_uring_submit(&loop->ring);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: WAITING for CQE (THIS IS WHERE IT BLOCKS)");
    io_uring_wait_cqe(&loop->ring, &cqe);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: CQE received, res=%d", cqe->res);
    sent_bytes = cqe->res;
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
@@ -510,6 +523,8 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
                          1);
    io_uring_buf_ring_advance(loop->br.br, 1);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: EXIT - sent_bytes=%d", sent_bytes);
 
 #endif /* HAVE_LINUX */
    return sent_bytes;
