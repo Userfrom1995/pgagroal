@@ -400,12 +400,18 @@ transaction_server(struct io_watcher* watcher)
    wi = (struct worker_io*)watcher;
    config = (struct main_configuration*)shmem;
 
+   pgagroal_log_debug("transaction_server: ENTER - server_fd=%d, client_fd=%d", 
+                      wi->server_fd, wi->client_fd);
+
    if (!pgagroal_socket_isvalid(wi->client_fd))
    {
+      pgagroal_log_debug("transaction_server: client_fd invalid, going to client_error");
       goto client_error;
    }
 
+   pgagroal_log_debug("transaction_server: Calling pgagroal_recv_message");
    status = pgagroal_recv_message(watcher, &msg);
+   pgagroal_log_debug("transaction_server: pgagroal_recv_message returned status=%d", status);
 
    if (likely(status == MESSAGE_STATUS_OK))
    {

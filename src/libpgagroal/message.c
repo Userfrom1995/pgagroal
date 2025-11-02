@@ -162,6 +162,9 @@ pgagroal_recv_message(struct io_watcher* watcher, struct message** msg)
 
    int rfd = watcher->fds.worker.rcv_fd;
 
+   pgagroal_log_debug("pgagroal_recv_message: ENTER - rcv_fd=%d, client_fd=%d, server_fd=%d", 
+                      rfd, wi->client_fd, wi->server_fd);
+
    /* Use the correct TLS context for the receiving endpoint */
    if (rfd == wi->client_fd && wi->client_ssl != NULL)
    {
@@ -174,8 +177,10 @@ pgagroal_recv_message(struct io_watcher* watcher, struct message** msg)
 
    if (config->ev_backend != PGAGROAL_EVENT_BACKEND_IO_URING)
    {
+      pgagroal_log_debug("pgagroal_recv_message: Using read_message (non-io_uring)");
       return read_message(rfd, false, 0, msg);
    }
+   pgagroal_log_debug("pgagroal_recv_message: Using read_message_from_buffer (io_uring)");
    return read_message_from_buffer(watcher, msg);
 }
 
