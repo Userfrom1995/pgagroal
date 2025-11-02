@@ -487,7 +487,8 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 
    pgagroal_log_debug("pgagroal_event_prep_submit_send: Getting SQE");
    sqe = io_uring_get_sqe(&loop->ring);
-   io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+   /* Tag this as a send operation so pgagroal_wait_recv() can filter it */
+   io_uring_sqe_set_data(sqe, IO_URING_OP_SEND);
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
    /* XXX: Implement zero copy send (this has been shown to speed up a little some
@@ -535,10 +536,37 @@ pgagroal_wait_recv(void)
 {
    int recv_bytes = 0;
 #if HAVE_LINUX
-   struct io_uring_cqe* rcv_cqe = NULL;
-   io_uring_wait_cqe(&loop->ring, &rcv_cqe);
-   recv_bytes = rcv_cqe->res;
-   io_uring_cqe_seen(&loop->ring, rcv_cqe);
+   struct io_uring_cqe* cqe = NULL;
+   void* user_data = NULL;
+   
+   pgagroal_log_debug("pgagroal_wait_recv: Waiting for receive completion");
+   
+   /* Loop until we find a receive completion, discarding any send completions */
+   while (true)
+   {
+      io_uring_wait_cqe(&loop->ring, &cqe);
+      
+      user_data = io_uring_cqe_get_data(cqe);
+      
+      pgagroal_log_debug("pgagroal_wait_recv: Got completion, user_data=%p, res=%d", user_data, cqe->res);
+      
+      /* Check if this is an operation marker (send) or a watcher pointer (receive) */
+      if (IO_URING_IS_OP_MARKER(user_data))
+      {
+         /* This is a send completion - discard it and continue waiting */
+         pgagroal_log_debug("pgagroal_wait_recv: Send completion encountered (res=%d), discarding", cqe->res);
+         io_uring_cqe_seen(&loop->ring, cqe);
+         /* Continue loop to wait for next completion */
+      }
+      else
+      {
+         /* This is a watcher pointer - must be a receive completion */
+         recv_bytes = cqe->res;
+         io_uring_cqe_seen(&loop->ring, cqe);
+         pgagroal_log_debug("pgagroal_wait_recv: Receive completion found, bytes=%d", recv_bytes);
+         break;
+      }
+   }
 #endif
    return recv_bytes;
 }
@@ -798,7 +826,8 @@ static int
 ev_io_uring_handler(struct io_uring_cqe* cqe)
 {
    int rc = 0;
-   event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
+   void* user_data = io_uring_cqe_get_data(cqe);
+   event_watcher_t* watcher = NULL;
    struct io_watcher* io;
    struct periodic_watcher* per;
    struct message* msg = pgagroal_memory_message();
@@ -806,6 +835,15 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    loop->bid = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
+   /* Check if this is an operation marker (send) - skip it, handled by pgagroal_wait_recv */
+   if (IO_URING_IS_OP_MARKER(user_data))
+   {
+      pgagroal_log_trace("ev_io_uring_handler: Skipping send operation marker");
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
+   watcher = (event_watcher_t*)user_data;
 
    /* Cancelled requests will trigger the handler, but have NULL data. */
    if (!watcher)

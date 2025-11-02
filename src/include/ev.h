@@ -110,6 +110,28 @@ enum ev_return_codes
    PGAGROAL_EVENT_RC_CONN_CLOSED,
 };
 
+#if HAVE_LINUX
+/**
+ * @brief Marker bit to distinguish operation types from watcher pointers
+ * 
+ * We use bit 0 of user_data to distinguish:
+ * - Bit 0 = 0: watcher pointer (for event loop)
+ * - Bit 0 = 1: operation type marker (for blocking send/recv)
+ */
+#define IO_URING_OP_MARKER 0x1
+
+/**
+ * @brief Operation type for send operations
+ * Bit 0 is set to mark this as an operation type, not a pointer
+ */
+#define IO_URING_OP_SEND ((void*)((uintptr_t)0x1))
+
+/**
+ * @brief Check if user_data is an operation marker (not a watcher pointer)
+ */
+#define IO_URING_IS_OP_MARKER(data) (((uintptr_t)(data) & IO_URING_OP_MARKER) != 0)
+#endif /* HAVE_LINUX */
+
 struct event_loop;
 
 /**
