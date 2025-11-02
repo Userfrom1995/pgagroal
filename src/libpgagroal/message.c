@@ -119,18 +119,29 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   pgagroal_log_debug("send message: fd=%d len=%zd", watcher->fds.worker.snd_fd, (ssize_t)msg->length);
-   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
-   pgagroal_log_debug("send message result: fd=%d sent=%d", watcher->fds.worker.snd_fd, sent_bytes);
-
    if (msg->length == 0)
    {
       return MESSAGE_STATUS_ZERO;
    }
-   if (sent_bytes < msg->length)
+
+   ssize_t total = 0;
+   while (total < msg->length)
    {
-      return MESSAGE_STATUS_ERROR;
+      struct message chunk = *msg;
+      chunk.data = ((char*)msg->data) + total;
+      chunk.length = msg->length - total;
+
+      pgagroal_log_debug("send message: fd=%d len=%zd (offset=%zd)",
+                         watcher->fds.worker.snd_fd, (ssize_t)chunk.length, total);
+      int sent = pgagroal_event_prep_submit_send(watcher, &chunk);
+      pgagroal_log_debug("send message result: fd=%d sent=%d", watcher->fds.worker.snd_fd, sent);
+      if (sent <= 0)
+      {
+         return MESSAGE_STATUS_ERROR;
+      }
+      total += sent;
    }
+
    return MESSAGE_STATUS_OK;
 }
 
