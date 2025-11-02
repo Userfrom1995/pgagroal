@@ -99,9 +99,17 @@ pgagroal_write_socket_message(int socket, struct message* msg)
 static int
 read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message** msg_p)
 {
+   pgagroal_log_debug("read_message_from_buffer: ENTER - about to call pgagroal_memory_message()");
    struct message* msg = pgagroal_memory_message();
+   pgagroal_log_debug("read_message_from_buffer: Got message - msg=%p", msg);
+   
+   if (msg == NULL)
+   {
+      pgagroal_log_error("read_message_from_buffer: pgagroal_memory_message() returned NULL!");
+      return MESSAGE_STATUS_ERROR;
+   }
 
-   pgagroal_log_debug("read_message_from_buffer: ENTER - msg=%p, msg->length=%d", msg, msg->length);
+   pgagroal_log_debug("read_message_from_buffer: msg->length=%d", msg->length);
 
    if (msg->length == 0)
    {
