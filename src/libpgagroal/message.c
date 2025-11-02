@@ -116,7 +116,7 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
    return MESSAGE_STATUS_OK;
 }
 
-static int
+static int __attribute__((unused))
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
    int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
@@ -175,7 +175,6 @@ pgagroal_recv_message(struct io_watcher* watcher, struct message** msg)
 int
 pgagroal_send_message(struct io_watcher* watcher, struct message* msg)
 {
-   struct main_configuration* config = (struct main_configuration*)shmem;
    struct worker_io* wi = (struct worker_io*)watcher;
 
    int sfd = watcher->fds.worker.snd_fd;
@@ -190,11 +189,10 @@ pgagroal_send_message(struct io_watcher* watcher, struct message* msg)
       return ssl_write_message(wi->server_ssl, msg);
    }
 
-   if (config->ev_backend != PGAGROAL_EVENT_BACKEND_IO_URING)
-   {
-      return write_message(sfd, msg);
-   }
-   return write_message_from_buffer(watcher, msg);
+   /* Temporary solution: Use write_message() for all backends including io_uring.
+    * This avoids complexity with async io_uring sends while maintaining stability.
+    * See doc/IO_URING_SEND_APPROACH.md for trade-offs and future plans. */
+   return write_message(sfd, msg);
 }
 
 int
