@@ -124,25 +124,13 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
       return MESSAGE_STATUS_ZERO;
    }
 
-   ssize_t total = 0;
-   while (total < msg->length)
-   {
-      struct message chunk = *msg;
-      chunk.data = ((char*)msg->data) + total;
-      chunk.length = msg->length - total;
-
-      pgagroal_log_debug("send message: fd=%d len=%zd (offset=%zd)",
-                         watcher->fds.worker.snd_fd, (ssize_t)chunk.length, total);
-      int sent = pgagroal_event_prep_submit_send(watcher, &chunk);
-      pgagroal_log_debug("send message result: fd=%d sent=%d", watcher->fds.worker.snd_fd, sent);
-      if (sent <= 0)
-      {
-         return MESSAGE_STATUS_ERROR;
-      }
-      total += sent;
-   }
-
-   return MESSAGE_STATUS_OK;
+   /* Important: don't consume the shared io_uring CQ here. Using the ring from
+    * the send path races with the event loop and can attribute completions to the
+    * wrong operation. Fall back to the blocking write() loop which already
+    * handles partial sends correctly (same as epoll/kqueue paths). */
+   int sfd = watcher->fds.worker.snd_fd;
+   int rc = write_message(sfd, msg);
+   return rc;
 }
 
 static int __attribute__((unused))

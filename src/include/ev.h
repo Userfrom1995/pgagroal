@@ -145,6 +145,8 @@ struct io_watcher
       } worker;                            /**< Struct that holds the file descriptors for the worker */
       int __fds[2];
    } fds;                                  /**< Set of file descriptors used for I/O */
+   /* io_uring-only: dedicated receive buffer to avoid shared-buffer corruption */
+   struct message* iouring_msg;            /**< Per-watcher message buffer for io_uring recv */
    bool ssl;                               /**< Indicates if SSL/TLS is used on this connection. */
    void (*cb)(struct io_watcher* watcher); /**< Event callback. */
 };

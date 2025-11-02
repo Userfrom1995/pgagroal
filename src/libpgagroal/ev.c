@@ -338,6 +338,16 @@ pgagroal_event_loop_destroy(void)
    {
       watcher = (struct io_watcher*)loop->events[i];
       pgagroal_disconnect(watcher->fds.worker.snd_fd);
+      if (watcher->iouring_msg)
+      {
+         if (watcher->iouring_msg->data)
+         {
+            free(watcher->iouring_msg->data);
+            watcher->iouring_msg->data = NULL;
+         }
+         free(watcher->iouring_msg);
+         watcher->iouring_msg = NULL;
+      }
    }
 
    free(loop);
@@ -387,6 +397,7 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
    watcher->event_watcher.type = PGAGROAL_EVENT_TYPE_WORKER;
    watcher->fds.worker.rcv_fd = rcv_fd;
    watcher->fds.worker.snd_fd = snd_fd;
+   watcher->iouring_msg = NULL;
    watcher->cb = cb;
    return PGAGROAL_EVENT_RC_OK;
 }
@@ -597,7 +608,25 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          sqe->buf_group = 0;
          sqe->flags |= IOSQE_BUFFER_SELECT;
 #else
-         msg = pgagroal_memory_message();
+         /* Ensure a dedicated buffer per watcher to avoid shared-buffer corruption */
+         if (watcher->iouring_msg == NULL)
+         {
+            watcher->iouring_msg = (struct message*)calloc(1, sizeof(struct message));
+            if (watcher->iouring_msg == NULL)
+            {
+               pgagroal_log_fatal("io_uring: failed to allocate watcher message struct");
+               return PGAGROAL_EVENT_RC_FATAL;
+            }
+            watcher->iouring_msg->data = calloc(1, DEFAULT_BUFFER_SIZE);
+            if (watcher->iouring_msg->data == NULL)
+            {
+               pgagroal_log_fatal("io_uring: failed to allocate watcher message buffer");
+               free(watcher->iouring_msg);
+               watcher->iouring_msg = NULL;
+               return PGAGROAL_EVENT_RC_FATAL;
+            }
+         }
+         msg = watcher->iouring_msg;
          io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE, 0);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
          break;
@@ -790,7 +819,7 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
    event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
    struct io_watcher* io;
    struct periodic_watcher* per;
-   struct message* msg = pgagroal_memory_message();
+   struct message* msg = NULL;
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    loop->bid = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
@@ -838,6 +867,7 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
+         msg = io->iouring_msg ? io->iouring_msg : pgagroal_memory_message();
          if (cqe->res == 0)
          {
             pgagroal_log_debug("Connection closed");
