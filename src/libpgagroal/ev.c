@@ -838,11 +838,19 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
-         if (!(cqe->res))
+         if (cqe->res == 0)
          {
             pgagroal_log_debug("Connection closed");
             msg->length = 0;
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
+         }
+         else if (cqe->res < 0)
+         {
+            int err = -cqe->res;
+            pgagroal_log_debug("io_uring recv error: fd=%d err=%d (%s)", io->fds.worker.rcv_fd, err, strerror(err));
+            /* Mark as error for upper layers; do not touch msg->data/kind */
+            msg->length = -1;
+            rc = PGAGROAL_EVENT_RC_OK;
          }
          else
          {
