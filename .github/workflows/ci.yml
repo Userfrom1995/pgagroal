@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - master
+      - not_again
   pull_request:
     branches:
       - master
+      - not_again
   workflow_dispatch:
 
 jobs:
