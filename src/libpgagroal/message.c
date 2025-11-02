@@ -97,10 +97,9 @@ pgagroal_write_socket_message(int socket, struct message* msg)
 }
 
 static int
-read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
+read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message** msg_p)
 {
-   /* In io_uring mode we bind a dedicated buffer to each watcher */
-   struct message* msg = watcher->iouring_msg;
+   struct message* msg = pgagroal_memory_message();
 
    if (msg->length == 0)
    {
@@ -120,27 +119,18 @@ read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   ssize_t total = 0;
+   pgagroal_log_debug("send message: fd=%d len=%zd", watcher->fds.worker.snd_fd, (ssize_t)msg->length);
+   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
+   pgagroal_log_debug("send message result: fd=%d sent=%d", watcher->fds.worker.snd_fd, sent_bytes);
 
    if (msg->length == 0)
    {
       return MESSAGE_STATUS_ZERO;
    }
-
-   while (total < msg->length)
+   if (sent_bytes < msg->length)
    {
-      struct message chunk = *msg;
-      chunk.data = ((char*)msg->data) + total;
-      chunk.length = msg->length - total;
-
-      int sent = pgagroal_event_prep_submit_send(watcher, &chunk);
-      if (sent <= 0)
-      {
-         return MESSAGE_STATUS_ERROR;
-      }
-      total += sent;
+      return MESSAGE_STATUS_ERROR;
    }
-
    return MESSAGE_STATUS_OK;
 }
 

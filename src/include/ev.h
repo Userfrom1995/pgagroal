@@ -74,8 +74,6 @@ extern "C" {
 #define PGAGROAL_NSIG 33
 #endif
 
-/* Forward declaration to allow embedding message pointers in watchers */
-struct message;
 
 /* Constants used to define the supported event backends */
 typedef enum ev_backend
@@ -149,12 +147,6 @@ struct io_watcher
    } fds;                                  /**< Set of file descriptors used for I/O */
    bool ssl;                               /**< Indicates if SSL/TLS is used on this connection. */
    void (*cb)(struct io_watcher* watcher); /**< Event callback. */
-   /*
-    * io_uring receive buffer bound to this watcher.
-    * Each watcher must have a dedicated buffer to avoid data corruption when
-    * multiple recv SQEs are outstanding (e.g., client and server ends).
-    */
-   struct message* iouring_msg;
 };
 
 /**

@@ -180,9 +180,9 @@ client_error:
    return;
 
 server_error:
-   pgagroal_log_warn("[C] Server error (slot %d database %s user %s): %s (socket %d status %d)",
+   pgagroal_log_warn("[C] Server error (slot %d database %s user %s): %s (socket %d status %d, errno=%d)",
                      wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
-                     strerror(errno), wi->server_fd, status);
+                     strerror(errno), wi->server_fd, status, errno);
    pgagroal_log_message(msg);
    errno = 0;
 
@@ -227,9 +227,9 @@ performance_server(struct io_watcher* watcher)
          {
             exit_code = WORKER_SERVER_FATAL;
             pgagroal_event_loop_break();
-            pgagroal_log_warn("[C] Server Fatal (slot %d database %s user %s): %s (socket %d status %d)",
+            pgagroal_log_warn("[C] Server Fatal (slot %d database %s user %s): %s (socket %d status %d, errno=%d)",
                               wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
-                              strerror(errno), wi->client_fd, status);
+                              strerror(errno), wi->client_fd, status, errno);
          }
       }
    }
@@ -266,9 +266,9 @@ server_done:
    return;
 
 server_error:
-   pgagroal_log_warn("[S] Server error (slot %d database %s user %s): %s (socket %d status %d)",
+   pgagroal_log_warn("[S] Server error (slot %d database %s user %s): %s (socket %d status %d, errno=%d)",
                      wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
-                     strerror(errno), wi->server_fd, status);
+                     strerror(errno), wi->server_fd, status, errno);
    pgagroal_log_message(msg);
    errno = 0;
 
