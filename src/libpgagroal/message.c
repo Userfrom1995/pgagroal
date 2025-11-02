@@ -101,18 +101,23 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 {
    struct message* msg = pgagroal_memory_message();
 
+   pgagroal_log_debug("read_message_from_buffer: ENTER - msg=%p, msg->length=%d", msg, msg->length);
+
    if (msg->length == 0)
    {
+      pgagroal_log_debug("read_message_from_buffer: Zero length message");
       return MESSAGE_STATUS_ZERO;
    }
 
    if (msg->length < 0)
    {
+      pgagroal_log_debug("read_message_from_buffer: Negative length message: %d", msg->length);
       return MESSAGE_STATUS_ERROR;
    }
 
    msg->kind = (signed char)(*((char*)msg->data));
    *msg_p = msg;
+   pgagroal_log_debug("read_message_from_buffer: EXIT - msg->kind=%c, msg->length=%d", msg->kind, msg->length);
    return MESSAGE_STATUS_OK;
 }
 
