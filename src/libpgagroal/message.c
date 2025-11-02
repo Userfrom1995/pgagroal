@@ -99,13 +99,6 @@ pgagroal_write_socket_message(int socket, struct message* msg)
 static int
 read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message** msg_p)
 {
-   pgagroal_log_debug("read_message_from_buffer: ENTER - calling pgagroal_wait_recv()");
-   
-   /* Wait for the receive operation to complete */
-   int read_bytes = pgagroal_wait_recv();
-   
-   pgagroal_log_debug("read_message_from_buffer: pgagroal_wait_recv() returned %d bytes", read_bytes);
-   
    struct message* msg = pgagroal_memory_message();
    
    if (msg == NULL)
@@ -114,10 +107,22 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
       return MESSAGE_STATUS_ERROR;
    }
 
+#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+   /* Multishot mode: data is already in the buffer from event loop */
+   pgagroal_log_debug("read_message_from_buffer: MULTISHOT mode - msg=%p, msg->length=%d", msg, msg->length);
+#else
+   /* Non-multishot mode: wait for the receive operation to complete */
+   pgagroal_log_debug("read_message_from_buffer: NON-MULTISHOT mode - calling pgagroal_wait_recv()");
+   
+   int read_bytes = pgagroal_wait_recv();
+   
+   pgagroal_log_debug("read_message_from_buffer: pgagroal_wait_recv() returned %d bytes", read_bytes);
+   
    /* Update message length from the receive result */
    msg->length = read_bytes;
    
    pgagroal_log_debug("read_message_from_buffer: msg=%p, msg->length=%d", msg, msg->length);
+#endif
 
    if (msg->length == 0)
    {
