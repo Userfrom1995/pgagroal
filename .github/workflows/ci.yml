@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - master
+      - io_urinng_redo
   pull_request:
     branches:
       - master
+      - io_urinng_redo
   workflow_dispatch:
 
 jobs:
