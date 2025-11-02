@@ -120,16 +120,27 @@ read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
+   ssize_t total = 0;
 
    if (msg->length == 0)
    {
       return MESSAGE_STATUS_ZERO;
    }
-   if (sent_bytes < msg->length)
+
+   while (total < msg->length)
    {
-      return MESSAGE_STATUS_ERROR;
+      struct message chunk = *msg;
+      chunk.data = ((char*)msg->data) + total;
+      chunk.length = msg->length - total;
+
+      int sent = pgagroal_event_prep_submit_send(watcher, &chunk);
+      if (sent <= 0)
+      {
+         return MESSAGE_STATUS_ERROR;
+      }
+      total += sent;
    }
+
    return MESSAGE_STATUS_OK;
 }
 

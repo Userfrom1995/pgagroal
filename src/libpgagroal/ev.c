@@ -508,7 +508,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_wait_cqe(&loop->ring, &cqe);
    sent_bytes = msg->length;
 #else
-   send_flags |= MSG_WAITALL;
+   /* For send, don't use MSG_WAITALL (it's for recv); loop at higher level instead. */
    send_flags |= MSG_NOSIGNAL;
    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
    io_uring_submit(&loop->ring);
