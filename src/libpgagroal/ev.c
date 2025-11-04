@@ -587,12 +587,31 @@ pgagroal_wait_recv(void)
    struct io_uring_cqe* rcv_cqe = NULL;
    
    pgagroal_log_debug("pgagroal_wait_recv: waiting for receive completion...");
-   io_uring_wait_cqe(&loop->ring, &rcv_cqe);
    
-   recv_bytes = rcv_cqe->res;
-   pgagroal_log_debug("pgagroal_wait_recv: received cqe->res=%d", recv_bytes);
+   // Wait for a receive completion, skip any send completions
+   while (true)
+   {
+      io_uring_wait_cqe(&loop->ring, &rcv_cqe);
+      
+      void* user_data = io_uring_cqe_get_data(rcv_cqe);
+      
+      if (user_data != NULL)
+      {
+         // This is a receive completion (user_data == watcher)
+         recv_bytes = rcv_cqe->res;
+         pgagroal_log_debug("pgagroal_wait_recv: got receive completion, cqe->res=%d", recv_bytes);
+         io_uring_cqe_seen(&loop->ring, rcv_cqe);
+         break;
+      }
+      else
+      {
+         // This is a send completion (user_data == 0), skip it
+         pgagroal_log_debug("pgagroal_wait_recv: skipping send completion");
+         io_uring_cqe_seen(&loop->ring, rcv_cqe);
+         // Continue loop to wait for receive completion
+      }
+   }
    
-   io_uring_cqe_seen(&loop->ring, rcv_cqe);
    pgagroal_log_debug("pgagroal_wait_recv: returning recv_bytes=%d", recv_bytes);
 #endif
    return recv_bytes;
