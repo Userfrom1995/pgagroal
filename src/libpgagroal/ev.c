@@ -504,21 +504,37 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    while (remaining > 0)
    {
       sqe = io_uring_get_sqe(&loop->ring);
-      io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+      io_uring_sqe_set_data(sqe, 0); /* data needs to be null for send operations */
 
       pgagroal_log_debug("pgagroal_event_prep_submit_send: requesting send of %zd bytes (offset=%d, total_sent=%zd)", 
                          remaining, offset, total_sent);
 
       io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data + offset, remaining, send_flags);
       io_uring_submit(&loop->ring);
-      io_uring_wait_cqe(&loop->ring, &cqe);
       
-      this_send = cqe->res;
-      
-      pgagroal_log_debug("pgagroal_event_prep_submit_send: cqe->res=%d", this_send);
-
-      // MUST mark CQE as seen before checking result
-      io_uring_cqe_seen(&loop->ring, cqe);
+      // Wait for OUR send completion, skip any receive completions
+      while (true)
+      {
+         io_uring_wait_cqe(&loop->ring, &cqe);
+         
+         void* user_data = io_uring_cqe_get_data(cqe);
+         
+         if (user_data == NULL)
+         {
+            // This is a send completion (user_data == 0)
+            this_send = cqe->res;
+            pgagroal_log_debug("pgagroal_event_prep_submit_send: got send completion, cqe->res=%d", this_send);
+            io_uring_cqe_seen(&loop->ring, cqe);
+            break;
+         }
+         else
+         {
+            // This is a receive completion (user_data == watcher), skip it
+            pgagroal_log_debug("pgagroal_event_prep_submit_send: skipping receive completion (user_data=%p)", user_data);
+            io_uring_cqe_seen(&loop->ring, cqe);
+            // Continue loop to wait for send completion
+         }
+      }
       
       if (this_send <= 0)
       {
@@ -546,7 +562,6 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    }
 
    sent_bytes = total_sent;
-   pgagroal_log_debug("pgagroal_event_prep_submit_send: COMPLETE - returning sent_bytes=%d", sent_bytes);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
@@ -560,6 +575,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
 #endif /* HAVE_LINUX */
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: RETURN sent_bytes=%d", sent_bytes);
    return sent_bytes;
 }
 
@@ -569,9 +585,15 @@ pgagroal_wait_recv(void)
    int recv_bytes = 0;
 #if HAVE_LINUX
    struct io_uring_cqe* rcv_cqe = NULL;
+   
+   pgagroal_log_debug("pgagroal_wait_recv: waiting for receive completion...");
    io_uring_wait_cqe(&loop->ring, &rcv_cqe);
+   
    recv_bytes = rcv_cqe->res;
+   pgagroal_log_debug("pgagroal_wait_recv: received cqe->res=%d", recv_bytes);
+   
    io_uring_cqe_seen(&loop->ring, rcv_cqe);
+   pgagroal_log_debug("pgagroal_wait_recv: returning recv_bytes=%d", recv_bytes);
 #endif
    return recv_bytes;
 }
