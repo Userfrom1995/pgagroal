@@ -124,7 +124,6 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    int offset;
    ssize_t totalbytes;
    ssize_t remaining;
-   struct message partial_msg;
 
 #ifdef DEBUG
    assert(msg != NULL);
@@ -139,12 +138,7 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    {
       keep_write = false;
 
-      // Create a partial message pointing to the unsent data
-      partial_msg.kind = msg->kind;
-      partial_msg.length = remaining;
-      partial_msg.data = msg->data + offset;
-
-      numbytes = pgagroal_event_prep_submit_send(watcher, &partial_msg);
+      numbytes = pgagroal_event_prep_submit_send(watcher, msg->data + offset, remaining);
 
       if (likely(numbytes == msg->length))
       {

@@ -468,12 +468,12 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
 }
 
 int
-pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
+pgagroal_event_prep_submit_send(struct io_watcher* watcher, void* data, ssize_t length)
 {
    int sent_bytes = 0;
 
-   pgagroal_log_debug("pgagroal_event_prep_submit_send: ENTRY - msg->length=%zd, fd=%d", 
-                      msg->length, watcher->fds.worker.snd_fd);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: ENTRY - length=%zd, fd=%d", 
+                      length, watcher->fds.worker.snd_fd);
 
 #if HAVE_LINUX
    struct io_uring_sqe* sqe = NULL;
@@ -482,9 +482,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
-   void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
-   pgagroal_log_debug("pgagroal_event_prep_submit_send: MULTISHOT - replacing msg->data, bid=%d", bid);
-   msg->data = data;
+   void* multishot_data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: MULTISHOT - replacing data, bid=%d", bid);
+   data = multishot_data;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
    sqe = io_uring_get_sqe(&loop->ring);
@@ -495,23 +495,24 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
     * workloads, but the implementation is still problematic). */
    pgagroal_log_debug("pgagroal_event_prep_submit_send: ZERO_COPY path - send_flags=0x%x", send_flags);
    // send_flags |= MSG_WAITALL;
-   io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+   io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, data, length, send_flags, 0);
    io_uring_submit(&loop->ring);
    io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = msg->length;
+   sent_bytes = length;
    pgagroal_log_debug("pgagroal_event_prep_submit_send: ZERO_COPY - cqe->res=%d, returning sent_bytes=%d", 
                       cqe->res, sent_bytes);
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
    pgagroal_log_debug("pgagroal_event_prep_submit_send: REGULAR path - send_flags=0x%x (MSG_WAITALL|MSG_NOSIGNAL)", send_flags);
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, data, length, send_flags);
    
    pgagroal_log_debug("pgagroal_event_prep_submit_send: submitting io_uring operation");
    io_uring_submit(&loop->ring);
    
    pgagroal_log_debug("pgagroal_event_prep_submit_send: waiting for completion");
    io_uring_wait_cqe(&loop->ring, &cqe);
+   
    sent_bytes = cqe->res;
    pgagroal_log_debug("pgagroal_event_prep_submit_send: REGULAR - cqe->res=%d, sent_bytes=%d", 
                       cqe->res, sent_bytes);
@@ -520,7 +521,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    pgagroal_log_debug("pgagroal_event_prep_submit_send: MULTISHOT - adding buffer back to ring");
    io_uring_buf_ring_add(loop->br.br,
-                         data,
+                         multishot_data,
                          DEFAULT_BUFFER_SIZE,
                          bid,
                          DEFAULT_BUFFER_SIZE,
@@ -528,6 +529,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_buf_ring_advance(loop->br.br, 1);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
+   io_uring_cqe_seen(&loop->ring, cqe);
    pgagroal_log_debug("pgagroal_event_prep_submit_send: marked cqe as seen");
 
 #endif /* HAVE_LINUX */
