@@ -124,6 +124,7 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    int offset;
    ssize_t totalbytes;
    ssize_t remaining;
+   ssize_t to_send;
 
 #ifdef DEBUG
    assert(msg != NULL);
@@ -138,7 +139,10 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    {
       keep_write = false;
 
-      numbytes = pgagroal_event_prep_submit_send(watcher, msg->data + offset, remaining);
+      // Limit each send to 8192 bytes maximum
+      to_send = (remaining > 8192) ? 8192 : remaining;
+
+      numbytes = pgagroal_event_prep_submit_send(watcher, msg->data + offset, to_send);
 
       if (likely(numbytes == msg->length))
       {
