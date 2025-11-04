@@ -119,17 +119,69 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
+   bool keep_write;
+   ssize_t numbytes;
+   int offset;
+   ssize_t totalbytes;
+   ssize_t remaining;
+   struct message partial_msg;
 
-   if (msg->length == 0)
+#ifdef DEBUG
+   assert(msg != NULL);
+#endif
+
+   numbytes = 0;
+   offset = 0;
+   totalbytes = 0;
+   remaining = msg->length;
+
+   do
    {
-      return MESSAGE_STATUS_ZERO;
+      keep_write = false;
+
+      // Create a partial message pointing to the unsent data
+      partial_msg.kind = msg->kind;
+      partial_msg.length = remaining;
+      partial_msg.data = msg->data + offset;
+
+      numbytes = pgagroal_event_prep_submit_send(watcher, &partial_msg);
+
+      if (likely(numbytes == msg->length))
+      {
+         return MESSAGE_STATUS_OK;
+      }
+      else if (numbytes != -1)
+      {
+         offset += numbytes;
+         totalbytes += numbytes;
+         remaining -= numbytes;
+
+         if (totalbytes == msg->length)
+         {
+            return MESSAGE_STATUS_OK;
+         }
+
+         pgagroal_log_debug("Write %d - %zd/%zd vs %zd", watcher->fds.worker.snd_fd, numbytes, totalbytes, msg->length);
+         keep_write = true;
+         errno = 0;
+      }
+      else
+      {
+         switch (errno)
+         {
+            case EAGAIN:
+               keep_write = true;
+               errno = 0;
+               break;
+            default:
+               keep_write = false;
+               break;
+         }
+      }
    }
-   if (sent_bytes < msg->length)
-   {
-      return MESSAGE_STATUS_ERROR;
-   }
-   return MESSAGE_STATUS_OK;
+   while (keep_write);
+
+   return MESSAGE_STATUS_ERROR;
 }
 
 static int __attribute__((unused))
