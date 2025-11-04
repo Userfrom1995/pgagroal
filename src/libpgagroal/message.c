@@ -119,7 +119,7 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg->data, msg->length);
+   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
 
    if (msg->length == 0)
    {

@@ -378,13 +378,12 @@ struct message;
  * The number of bytes sent is then returned.
  *
  * @param watcher Pointer to the I/O watcher structure.
- * @param data Pointer to the data buffer to send.
- * @param length Number of bytes to send.
+ * @param msg Pointer to the message structure containing data to send.
  *
  * @return The number of bytes sent.
  */
 int
-pgagroal_event_prep_submit_send(struct io_watcher* watcher, void* data, ssize_t length);
+pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg);
 
 /**
  * @brief Submit a send operation from outside the event loop using io_uring.
