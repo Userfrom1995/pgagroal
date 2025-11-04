@@ -119,12 +119,9 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   bool keep_write;
    int sent_bytes;
-   ssize_t offset;
-   ssize_t totalbytes;
-   ssize_t remaining;
-   struct message partial_msg;
+
+   pgagroal_log_debug("write_message_from_buffer: sending message length=%zd", msg->length);
 
    if (msg->length == 0)
    {
@@ -132,58 +129,27 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
       return MESSAGE_STATUS_ZERO;
    }
 
-   offset = 0;
-   totalbytes = 0;
-   remaining = msg->length;
+   sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
 
-   pgagroal_log_debug("write_message_from_buffer: starting send loop, total length=%zd", msg->length);
+   pgagroal_log_debug("write_message_from_buffer: sent_bytes=%d, msg->length=%zd", sent_bytes, msg->length);
 
-   do
+   // Check if send was successful
+   if (sent_bytes < 0)
    {
-      keep_write = false;
-
-      // Create a partial message - keep original message structure but adjust data pointer
-      partial_msg.kind = msg->kind;
-      partial_msg.length = msg->length;  // Keep original length - don't modify this!
-      partial_msg.data = msg->data + offset;  // Just adjust the data pointer
-
-      sent_bytes = pgagroal_event_prep_submit_send(watcher, &partial_msg);
-
-      pgagroal_log_debug("write_message_from_buffer: sent_bytes=%d, remaining=%zd, offset=%zd, totalbytes=%zd", 
-                         sent_bytes, remaining, offset, totalbytes);
-
-      if (sent_bytes == msg->length)
-      {
-         // Complete message sent in one go
-         pgagroal_log_debug("write_message_from_buffer: complete send successful, total=%zd", msg->length);
-         pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
-         return MESSAGE_STATUS_OK;
-      }
-      else if (sent_bytes > 0 && sent_bytes <= remaining)
-      {
-         offset += sent_bytes;
-         totalbytes += sent_bytes;
-         remaining -= sent_bytes;
-
-         if (totalbytes >= msg->length)
-         {
-            pgagroal_log_debug("write_message_from_buffer: all data sent successfully, total=%zd", totalbytes);
-            pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
-            return MESSAGE_STATUS_OK;
-         }
-
-         pgagroal_log_debug("write_message_from_buffer: partial send, continuing (%zd/%zd bytes sent)", totalbytes, msg->length);
-         keep_write = true;
-      }
-      else
-      {
-         pgagroal_log_debug("write_message_from_buffer: send failed or invalid sent_bytes=%d (remaining=%zd)", sent_bytes, remaining);
-         keep_write = false;
-      }
+      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (sent_bytes=%d < 0)", sent_bytes);
+      return MESSAGE_STATUS_ERROR;
    }
-   while (keep_write);
 
-   pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (totalbytes=%zd < msg->length=%zd)", totalbytes, msg->length);
+   // For io_uring, we expect either complete success or failure
+   // The underlying io_uring implementation should handle partial sends internally
+   if (sent_bytes > 0)
+   {
+      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_OK (sent_bytes=%d > 0)", sent_bytes);
+      pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
+      return MESSAGE_STATUS_OK;
+   }
+
+   pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (sent_bytes=%d)", sent_bytes);
    return MESSAGE_STATUS_ERROR;
 }
 
