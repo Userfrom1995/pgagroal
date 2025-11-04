@@ -506,18 +506,34 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       sqe = io_uring_get_sqe(&loop->ring);
       io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
 
+      pgagroal_log_debug("pgagroal_event_prep_submit_send: requesting send of %zd bytes (offset=%d, total_sent=%zd)", 
+                         remaining, offset, total_sent);
+
       io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data + offset, remaining, send_flags);
       io_uring_submit(&loop->ring);
       io_uring_wait_cqe(&loop->ring, &cqe);
       
       this_send = cqe->res;
       
+      pgagroal_log_debug("pgagroal_event_prep_submit_send: cqe->res=%d", this_send);
+
+      // MUST mark CQE as seen before checking result
+      io_uring_cqe_seen(&loop->ring, cqe);
+      
       if (this_send <= 0)
       {
          // Error or connection closed
          pgagroal_log_debug("pgagroal_event_prep_submit_send: send failed, cqe->res=%d", this_send);
-         io_uring_cqe_seen(&loop->ring, cqe);
          sent_bytes = this_send;
+         break;
+      }
+
+      // Sanity check: don't send more than remaining
+      if (this_send > remaining)
+      {
+         pgagroal_log_error("pgagroal_event_prep_submit_send: BUG - sent %d bytes but only %zd remaining!", 
+                            this_send, remaining);
+         sent_bytes = -1;
          break;
       }
 
@@ -527,8 +543,6 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 
       pgagroal_log_debug("pgagroal_event_prep_submit_send: sent %d bytes, total=%zd/%zd, remaining=%zd", 
                          this_send, total_sent, msg->length, remaining);
-
-      // io_uring_cqe_seen(&loop->ring, cqe);
    }
 
    sent_bytes = total_sent;
