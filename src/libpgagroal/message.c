@@ -135,6 +135,9 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    totalbytes = 0;
    remaining = msg->length;
 
+   pgagroal_log_debug("write_message_from_buffer: START - msg->length=%zd, kind='%c' (0x%02x)", 
+                      msg->length, msg->kind, (unsigned char)msg->kind);
+
    do
    {
       keep_write = false;
@@ -142,10 +145,16 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
       // Limit each send to 8192 bytes maximum
       to_send = (remaining > 8192) ? 8192 : remaining;
 
+      pgagroal_log_debug("write_message_from_buffer: attempting to send %zd bytes (offset=%d, remaining=%zd)", 
+                         to_send, offset, remaining);
+
       numbytes = pgagroal_event_prep_submit_send(watcher, msg->data + offset, to_send);
+
+      pgagroal_log_debug("write_message_from_buffer: sent %zd bytes", numbytes);
 
       if (likely(numbytes == msg->length))
       {
+         pgagroal_log_debug("write_message_from_buffer: SUCCESS - complete message sent in one call");
          return MESSAGE_STATUS_OK;
       }
       else if (numbytes != -1)
@@ -154,8 +163,12 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
          totalbytes += numbytes;
          remaining -= numbytes;
 
+         pgagroal_log_debug("write_message_from_buffer: progress - offset=%d, totalbytes=%zd, remaining=%zd", 
+                            offset, totalbytes, remaining);
+
          if (totalbytes == msg->length)
          {
+            pgagroal_log_debug("write_message_from_buffer: SUCCESS - all %zd bytes sent", totalbytes);
             return MESSAGE_STATUS_OK;
          }
 
@@ -165,13 +178,16 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
       }
       else
       {
+         pgagroal_log_debug("write_message_from_buffer: numbytes=-1, errno=%d", errno);
          switch (errno)
          {
             case EAGAIN:
+               pgagroal_log_debug("write_message_from_buffer: EAGAIN - retrying");
                keep_write = true;
                errno = 0;
                break;
             default:
+               pgagroal_log_debug("write_message_from_buffer: ERROR - errno=%d, stopping", errno);
                keep_write = false;
                break;
          }
@@ -179,6 +195,7 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    }
    while (keep_write);
 
+   pgagroal_log_debug("write_message_from_buffer: FAILED - only sent %zd/%zd bytes", totalbytes, msg->length);
    return MESSAGE_STATUS_ERROR;
 }
 
