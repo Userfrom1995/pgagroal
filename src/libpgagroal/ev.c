@@ -512,7 +512,6 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    
    pgagroal_log_debug("pgagroal_event_prep_submit_send: waiting for completion");
    io_uring_wait_cqe(&loop->ring, &cqe);
-   
    sent_bytes = cqe->res;
    pgagroal_log_debug("pgagroal_event_prep_submit_send: REGULAR - cqe->res=%d, sent_bytes=%d", 
                       cqe->res, sent_bytes);
@@ -529,7 +528,6 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_buf_ring_advance(loop->br.br, 1);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
-   io_uring_cqe_seen(&loop->ring, cqe);
    pgagroal_log_debug("pgagroal_event_prep_submit_send: marked cqe as seen");
 
 #endif /* HAVE_LINUX */
