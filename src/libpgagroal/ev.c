@@ -475,39 +475,79 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, void* data, ssize_t 
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
    int send_flags = 0;
+   unsigned char* ptr = (unsigned char*)data;
+   ssize_t remaining = length;
+   int rc;
+
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* buf = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
-   /* if multishot buffer ring is enabled, the caller must copy or use the
-    * provided buffer; here we prefer to use the ring buffer pointer */
-   data = buf;
-   length = (length > DEFAULT_BUFFER_SIZE) ? DEFAULT_BUFFER_SIZE : length;
+   ptr = (unsigned char*)buf;
+   if (remaining > DEFAULT_BUFFER_SIZE)
+   {
+      remaining = DEFAULT_BUFFER_SIZE;
+   }
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
-   sqe = io_uring_get_sqe(&loop->ring);
-   io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+   while (remaining > 0)
+   {
+      sqe = io_uring_get_sqe(&loop->ring);
+      if (unlikely(!sqe))
+      {
+         io_uring_submit(&loop->ring);
+         continue;
+      }
+
+      /* Tag for potential matching; not filtered here to avoid cross-talk */
+      io_uring_sqe_set_data(sqe, watcher);
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
-   /* XXX: Implement zero copy send (this has been shown to speed up a little some
-    * workloads, but the implementation is still problematic). */
-   // send_flags |= MSG_WAITALL;
-   io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, data, length, send_flags, 0);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = (int)length;
+      io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, ptr, remaining, send_flags, 0);
 #else
-   send_flags |= MSG_WAITALL;
-   send_flags |= MSG_NOSIGNAL;
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, data, length, send_flags);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = cqe->res;
+      send_flags = MSG_NOSIGNAL;
+      io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, ptr, remaining, send_flags);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
+      rc = io_uring_submit(&loop->ring);
+      if (unlikely(rc < 0))
+      {
+         pgagroal_log_debug("io_uring submit error on send: %s", strerror(-rc));
+         return -1;
+      }
+
+      io_uring_wait_cqe(&loop->ring, &cqe);
+      if (unlikely(!cqe))
+      {
+         pgagroal_log_debug("io_uring_wait_cqe returned NULL CQE for send");
+         return -1;
+      }
+
+      if (cqe->res < 0)
+      {
+         int err = -cqe->res;
+         pgagroal_log_debug("send CQE error: fd=%d err=%d(%s) remaining=%zd", watcher->fds.worker.snd_fd, err, strerror(err), remaining);
+         io_uring_cqe_seen(&loop->ring, cqe);
+         errno = err;
+         return -1;
+      }
+
+      sent_bytes += cqe->res;
+      ptr += cqe->res;
+      remaining -= cqe->res;
+
+      pgagroal_log_debug("io_uring send progress: fd=%d res=%d total=%d/%zd", watcher->fds.worker.snd_fd, cqe->res, sent_bytes, length);
+
+      io_uring_cqe_seen(&loop->ring, cqe);
+
+      if (cqe->res == 0)
+      {
+         break;
+      }
+   }
+
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
-   /* Re-add the buffer back to the ring for future receives. */
    io_uring_buf_ring_add(loop->br.br,
-                         data,
+                         ptr,
                          DEFAULT_BUFFER_SIZE,
                          bid,
                          DEFAULT_BUFFER_SIZE,
