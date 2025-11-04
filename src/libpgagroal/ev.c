@@ -471,13 +471,19 @@ int
 pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
    int sent_bytes = 0;
+
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: ENTRY - msg->length=%zd, fd=%d", 
+                      msg->length, watcher->fds.worker.snd_fd);
+
 #if HAVE_LINUX
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
    int send_flags = 0;
+
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: MULTISHOT - replacing msg->data, bid=%d", bid);
    msg->data = data;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
@@ -487,21 +493,33 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
    /* XXX: Implement zero copy send (this has been shown to speed up a little some
     * workloads, but the implementation is still problematic). */
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: ZERO_COPY path - send_flags=0x%x", send_flags);
    // send_flags |= MSG_WAITALL;
    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
    io_uring_submit(&loop->ring);
    io_uring_wait_cqe(&loop->ring, &cqe);
    sent_bytes = msg->length;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: ZERO_COPY - cqe->res=%d, returning sent_bytes=%d", 
+                      cqe->res, sent_bytes);
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: REGULAR path - send_flags=0x%x (MSG_WAITALL|MSG_NOSIGNAL)", send_flags);
    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+   
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: submitting io_uring operation");
    io_uring_submit(&loop->ring);
+   
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: waiting for completion");
    io_uring_wait_cqe(&loop->ring, &cqe);
+   
    sent_bytes = cqe->res;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: REGULAR - cqe->res=%d, sent_bytes=%d", 
+                      cqe->res, sent_bytes);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: MULTISHOT - adding buffer back to ring");
    io_uring_buf_ring_add(loop->br.br,
                          data,
                          DEFAULT_BUFFER_SIZE,
@@ -511,7 +529,12 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_buf_ring_advance(loop->br.br, 1);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
+   io_uring_cqe_seen(&loop->ring, cqe);
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: marked cqe as seen");
+
 #endif /* HAVE_LINUX */
+
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: EXIT - returning sent_bytes=%d", sent_bytes);
    return sent_bytes;
 }
 

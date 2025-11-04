@@ -119,38 +119,17 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes;
-
-   pgagroal_log_debug("write_message_from_buffer: sending message length=%zd", msg->length);
+   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
 
    if (msg->length == 0)
    {
-      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ZERO (msg->length == 0)");
       return MESSAGE_STATUS_ZERO;
    }
-
-   sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
-
-   pgagroal_log_debug("write_message_from_buffer: sent_bytes=%d, msg->length=%zd", sent_bytes, msg->length);
-
-   // Check if send was successful
-   if (sent_bytes < 0)
+   if (sent_bytes < msg->length)
    {
-      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (sent_bytes=%d < 0)", sent_bytes);
       return MESSAGE_STATUS_ERROR;
    }
-
-   // For io_uring, we expect either complete success or failure
-   // The underlying io_uring implementation should handle partial sends internally
-   if (sent_bytes > 0)
-   {
-      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_OK (sent_bytes=%d > 0)", sent_bytes);
-      pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
-      return MESSAGE_STATUS_OK;
-   }
-
-   pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (sent_bytes=%d)", sent_bytes);
-   return MESSAGE_STATUS_ERROR;
+   return MESSAGE_STATUS_OK;
 }
 
 static int __attribute__((unused))
