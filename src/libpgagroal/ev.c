@@ -546,6 +546,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    }
 
    sent_bytes = total_sent;
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: COMPLETE - returning sent_bytes=%d", sent_bytes);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
