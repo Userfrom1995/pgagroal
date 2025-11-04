@@ -528,7 +528,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       pgagroal_log_debug("pgagroal_event_prep_submit_send: sent %d bytes, total=%zd/%zd, remaining=%zd", 
                          this_send, total_sent, msg->length, remaining);
 
-      io_uring_cqe_seen(&loop->ring, cqe);
+      // io_uring_cqe_seen(&loop->ring, cqe);
    }
 
    sent_bytes = total_sent;
