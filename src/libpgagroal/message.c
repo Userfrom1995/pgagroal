@@ -119,24 +119,71 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
-
-   pgagroal_log_debug("write_message_from_buffer: sent_bytes=%d", sent_bytes);
-   pgagroal_log_debug("write_message_from_buffer: msg->length=%zd", msg->length);
+   bool keep_write;
+   int sent_bytes;
+   int offset;
+   int totalbytes;
+   int remaining;
+   struct message partial_msg;
 
    if (msg->length == 0)
    {
       pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ZERO (msg->length == 0)");
       return MESSAGE_STATUS_ZERO;
    }
-   if (sent_bytes < msg->length)
+
+   offset = 0;
+   totalbytes = 0;
+   remaining = msg->length;
+
+   pgagroal_log_debug("write_message_from_buffer: starting send loop, total length=%zd", msg->length);
+
+   do
    {
-      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (sent_bytes=%d < msg->length=%zd)", sent_bytes, msg->length);
-      return MESSAGE_STATUS_ERROR;
+      keep_write = false;
+
+      // Create a partial message for the remaining data
+      partial_msg.kind = msg->kind;
+      partial_msg.length = remaining;
+      partial_msg.data = msg->data + offset;
+
+      sent_bytes = pgagroal_event_prep_submit_send(watcher, &partial_msg);
+
+      pgagroal_log_debug("write_message_from_buffer: sent_bytes=%d, remaining=%d, offset=%d", sent_bytes, remaining, offset);
+
+      if (sent_bytes == remaining)
+      {
+         totalbytes += sent_bytes;
+         pgagroal_log_debug("write_message_from_buffer: complete send successful, total=%d", totalbytes);
+         pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
+         return MESSAGE_STATUS_OK;
+      }
+      else if (sent_bytes > 0)
+      {
+         offset += sent_bytes;
+         totalbytes += sent_bytes;
+         remaining -= sent_bytes;
+
+         if (totalbytes == msg->length)
+         {
+            pgagroal_log_debug("write_message_from_buffer: partial sends completed successfully, total=%d", totalbytes);
+            pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
+            return MESSAGE_STATUS_OK;
+         }
+
+         pgagroal_log_debug("write_message_from_buffer: partial send %d/%zd, continuing", totalbytes, msg->length);
+         keep_write = true;
+      }
+      else
+      {
+         pgagroal_log_debug("write_message_from_buffer: send failed with sent_bytes=%d", sent_bytes);
+         keep_write = false;
+      }
    }
-   pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_OK (sent_bytes=%d >= msg->length=%zd)", sent_bytes, msg->length);
-   pgagroal_log_debug("write_message_from_buffer: message kind='%c' (0x%02x)", msg->kind, (unsigned char)msg->kind);
-   return MESSAGE_STATUS_OK;
+   while (keep_write);
+
+   pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR (totalbytes=%d < msg->length=%zd)", totalbytes, msg->length);
+   return MESSAGE_STATUS_ERROR;
 }
 
 static int __attribute__((unused))
