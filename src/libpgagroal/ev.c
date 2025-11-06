@@ -516,36 +516,46 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
 //    return sent_bytes;
 // }
 
-int pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
+int
+pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes = 0;
+    int sent_bytes = -1;
 #if HAVE_LINUX
-   struct io_uring_sqe* sqe = NULL;
-   struct io_uring_cqe* cqe = NULL;
-   int send_flags = MSG_NOSIGNAL;
-   
-   sqe = io_uring_get_sqe(&loop->ring);
-   if (!sqe) {
-       pgagroal_log_error("Failed to get SQE");
-       return -1;
-   }
-   
-   io_uring_sqe_set_data(sqe, NULL);
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
-   
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   
-   sent_bytes = cqe->res;
-   if (sent_bytes < 0) {
-       pgagroal_log_error("Send failed: %s", strerror(-sent_bytes));
-   }
-   
-   io_uring_cqe_seen(&loop->ring, cqe);  // Critical: mark CQE as consumed
+    struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring);
+    struct io_uring_cqe* cqe = NULL;
+    int send_flags = MSG_NOSIGNAL;
+
+    if (!sqe) {
+        pgagroal_log_warn("No SQE available in io_uring ring");
+        return -1;
+    }
+
+#if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
+    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+#else
+    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
 #endif
-   pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d", sent_bytes);
-   return sent_bytes;
+    io_uring_sqe_set_data(sqe, msg);
+
+    io_uring_submit(&loop->ring);
+
+    // For now, wait synchronously (blocking)
+    io_uring_wait_cqe(&loop->ring, &cqe);
+
+    if (cqe->res < 0) {
+        pgagroal_log_warn("send failed: %s", strerror(-cqe->res));
+        sent_bytes = -1;
+    } else {
+        sent_bytes = cqe->res;
+    }
+
+    io_uring_cqe_seen(&loop->ring, cqe);
+#endif
+
+    pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d", sent_bytes);
+    return sent_bytes;
 }
+
 
 int
 pgagroal_wait_recv(void)
