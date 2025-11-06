@@ -467,126 +467,84 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
    return periodic_stop(watcher);
 }
 
-int
-pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
+// int
+// pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
+// {
+//    int sent_bytes = 0;
+// #if HAVE_LINUX
+//    struct io_uring_sqe* sqe = NULL;
+//    struct io_uring_cqe* cqe = NULL;
+//    int send_flags = 0;
+// #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+//    int bid = loop->bid;
+//    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
+//    msg->data = data;
+// #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
+//    sqe = io_uring_get_sqe(&loop->ring);
+//    io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+
+// #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
+//    /* XXX: Implement zero copy send (this has been shown to speed up a little some
+//     * workloads, but the implementation is still problematic). */
+//    // send_flags |= MSG_WAITALL;
+//    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+//    io_uring_submit(&loop->ring);
+//    io_uring_wait_cqe(&loop->ring, &cqe);
+//    sent_bytes = msg->length;
+// #else
+//    send_flags |= MSG_WAITALL;
+//    send_flags |= MSG_NOSIGNAL;
+//    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+//    io_uring_submit(&loop->ring);
+//    io_uring_wait_cqe(&loop->ring, &cqe);
+//    sent_bytes = cqe->res;
+// #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
+
+// #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+//    io_uring_buf_ring_add(loop->br.br,
+//                          data,
+//                          DEFAULT_BUFFER_SIZE,
+//                          bid,
+//                          DEFAULT_BUFFER_SIZE,
+//                          1);
+//    io_uring_buf_ring_advance(loop->br.br, 1);
+// #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
+// #endif /* HAVE_LINUX */
+//    pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d", sent_bytes);
+//    return sent_bytes;
+// }
+
+int pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
    int sent_bytes = 0;
 #if HAVE_LINUX
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
-   int send_flags = 0;
-   int total_sent = 0;
-   int offset = 0;
-   int remaining = msg->length;
-   bool send_complete = false;
-   void* send_marker = (void*)0x1; /* Unique marker for send operations */
+   int send_flags = MSG_NOSIGNAL;
    
-#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
-   int bid = loop->bid;
-   void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
-   msg->data = data;
-#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
-
-#if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
-   /* XXX: Implement zero copy send (this has been shown to speed up a little some
-    * workloads, but the implementation is still problematic). */
    sqe = io_uring_get_sqe(&loop->ring);
-   io_uring_sqe_set_data(sqe, send_marker);
-   io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+   if (!sqe) {
+       pgagroal_log_error("Failed to get SQE");
+       return -1;
+   }
+   
+   io_uring_sqe_set_data(sqe, NULL);
+   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+   
    io_uring_submit(&loop->ring);
+   io_uring_wait_cqe(&loop->ring, &cqe);
    
-   /* Process all completions until we get our send completion */
-   while (!send_complete)
-   {
-      if (io_uring_wait_cqe(&loop->ring, &cqe) < 0)
-      {
-         break;
-      }
-      
-      if (io_uring_cqe_get_data(cqe) == send_marker)
-      {
-         sent_bytes = msg->length;
-         total_sent = sent_bytes;
-         send_complete = true;
-      }
-      else
-      {
-         /* This is a receive or other event - process it */
-         ev_io_uring_handler(cqe);
-      }
-      io_uring_cqe_seen(&loop->ring, cqe);
+   sent_bytes = cqe->res;
+   if (sent_bytes < 0) {
+       pgagroal_log_error("Send failed: %s", strerror(-sent_bytes));
    }
-#else
-   send_flags |= MSG_NOSIGNAL;
    
-   /* Loop until all bytes are sent */
-   while (remaining > 0)
-   {
-      sqe = io_uring_get_sqe(&loop->ring);
-      io_uring_sqe_set_data(sqe, send_marker);
-      io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data + offset, remaining, send_flags);
-      io_uring_submit(&loop->ring);
-      
-      send_complete = false;
-      /* Process completions until we get our send completion */
-      while (!send_complete)
-      {
-         if (io_uring_wait_cqe(&loop->ring, &cqe) < 0)
-         {
-            pgagroal_log_error("pgagroal_event_prep_submit_send: wait_cqe failed");
-            goto error;
-         }
-         
-         if (io_uring_cqe_get_data(cqe) == send_marker)
-         {
-            /* This is our send completion */
-            sent_bytes = cqe->res;
-            
-            if (sent_bytes <= 0)
-            {
-               pgagroal_log_error("pgagroal_event_prep_submit_send: send failed with res=%d", sent_bytes);
-               io_uring_cqe_seen(&loop->ring, cqe);
-               goto error;
-            }
-            
-            total_sent += sent_bytes;
-            offset += sent_bytes;
-            remaining -= sent_bytes;
-            send_complete = true;
-            
-            if (remaining > 0)
-            {
-               pgagroal_log_debug("pgagroal_event_prep_submit_send: partial send %d/%zd, continuing...", total_sent, msg->length);
-            }
-         }
-         else
-         {
-            /* This is a receive or other event - process it to avoid deadlock */
-            ev_io_uring_handler(cqe);
-         }
-         io_uring_cqe_seen(&loop->ring, cqe);
-      }
-   }
-#endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
-
-#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
-   io_uring_buf_ring_add(loop->br.br,
-                         data,
-                         DEFAULT_BUFFER_SIZE,
-                         bid,
-                         DEFAULT_BUFFER_SIZE,
-                         1);
-   io_uring_buf_ring_advance(loop->br.br, 1);
-#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
-
-#endif /* HAVE_LINUX */
-   pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d, msg->length=%zd", total_sent, msg->length);
-   return total_sent;
-
-#if HAVE_LINUX
-error:
-   return total_sent;
+   io_uring_cqe_seen(&loop->ring, cqe);  // Critical: mark CQE as consumed
 #endif
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d", sent_bytes);
+   return sent_bytes;
 }
 
 int
