@@ -477,6 +477,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    int send_flags = 0;
    int submit_rc = 0;
    int fd = watcher->fds.worker.snd_fd;
+   /* Defer non-send completions so they can be dispatched after the send finishes. */
+   struct io_uring_cqe deferred_cqes[IO_URING_SEND_DEFERRED_MAX];
+   int deferred_nr = 0;
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
@@ -520,12 +523,22 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 
          if (!IO_URING_IS_OP_MARKER(io_uring_cqe_get_data(cqe)))
          {
-            int handler_rc = ev_io_uring_handler(cqe);
-            io_uring_cqe_seen(&loop->ring, cqe);
-            if (handler_rc && handler_rc != PGAGROAL_EVENT_RC_CONN_CLOSED)
+            if (deferred_nr < IO_URING_SEND_DEFERRED_MAX)
             {
-               return -ECANCELED;
+               memcpy(&deferred_cqes[deferred_nr++], cqe, sizeof(struct io_uring_cqe));
             }
+            else
+            {
+               struct io_uring_cqe tmp = *cqe;
+               int handler_rc = ev_io_uring_handler(&tmp);
+               if (handler_rc && handler_rc != PGAGROAL_EVENT_RC_CONN_CLOSED)
+               {
+                  io_uring_cqe_seen(&loop->ring, cqe);
+                  return -ECANCELED;
+               }
+            }
+
+            io_uring_cqe_seen(&loop->ring, cqe);
             continue;
          }
 
@@ -539,6 +552,15 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
          sent_bytes += cqe->res;
          io_uring_cqe_seen(&loop->ring, cqe);
          break;
+      }
+   }
+
+   for (int i = 0; i < deferred_nr; i++)
+   {
+      int handler_rc = ev_io_uring_handler(&deferred_cqes[i]);
+      if (handler_rc && handler_rc != PGAGROAL_EVENT_RC_CONN_CLOSED)
+      {
+         return -ECANCELED;
       }
    }
 #else
