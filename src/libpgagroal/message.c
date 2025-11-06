@@ -101,34 +101,45 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 {
    struct message* msg = pgagroal_memory_message();
 
+   pgagroal_log_debug("read_message_from_buffer: msg=%p len=%zd", (void*)msg, msg ? msg->length : -1);
+
    if (msg->length == 0)
    {
+      pgagroal_log_debug("read_message_from_buffer: zero-length message");
       return MESSAGE_STATUS_ZERO;
    }
 
    if (msg->length < 0)
    {
+      pgagroal_log_debug("read_message_from_buffer: negative length=%zd", msg->length);
       return MESSAGE_STATUS_ERROR;
    }
 
    msg->kind = (signed char)(*((char*)msg->data));
    *msg_p = msg;
+   pgagroal_log_debug("read_message_from_buffer: success kind=%d len=%zd", msg->kind, msg->length);
    return MESSAGE_STATUS_OK;
 }
 
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
+   pgagroal_log_debug("write_message_from_buffer: watcher=%p snd_fd=%d msg=%p len=%zd", (void*)watcher,
+                      watcher ? watcher->fds.worker.snd_fd : -1, (void*)msg, msg ? msg->length : -1);
    int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
+   pgagroal_log_debug("write_message_from_buffer: send returned=%d expected=%zd", sent_bytes, msg ? msg->length : -1);
 
    if (msg->length == 0)
    {
+      pgagroal_log_debug("write_message_from_buffer: zero-length message");
       return MESSAGE_STATUS_ZERO;
    }
    if (sent_bytes < msg->length)
    {
+      pgagroal_log_debug("write_message_from_buffer: short send sent=%d expected=%zd", sent_bytes, msg->length);
       return MESSAGE_STATUS_ERROR;
    }
+   pgagroal_log_debug("write_message_from_buffer: success sent=%d", sent_bytes);
    return MESSAGE_STATUS_OK;
 }
 
@@ -136,14 +147,17 @@ static int __attribute__((unused))
 read_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message* msg)
 {
    int read_bytes = pgagroal_wait_recv();
+   pgagroal_log_debug("read_from_buffer: received bytes=%d", read_bytes);
 
    ((struct message*)msg)->length = read_bytes;
    msg->kind = (signed char)(*((char*)msg->data));
 
    if (msg->length == 0)
    {
+      pgagroal_log_debug("read_from_buffer: zero-length message");
       return MESSAGE_STATUS_ZERO;
    }
+   pgagroal_log_debug("read_from_buffer: success kind=%d len=%zd", msg->kind, msg->length);
    return MESSAGE_STATUS_OK;
 }
 

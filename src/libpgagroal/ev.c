@@ -481,7 +481,11 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    msg->data = data;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
+   pgagroal_log_debug("prep_submit_send: enter watcher=%p snd_fd=%d msg=%p len=%zd", (void*)watcher,
+                      watcher != NULL ? watcher->fds.worker.snd_fd : -1, (void*)msg, msg != NULL ? msg->length : -1);
+
    sqe = io_uring_get_sqe(&loop->ring);
+   pgagroal_log_debug("prep_submit_send: io_uring_get_sqe returned %p", (void*)sqe);
    io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
@@ -489,15 +493,21 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
     * workloads, but the implementation is still problematic). */
    // send_flags |= MSG_WAITALL;
    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+   pgagroal_log_debug("prep_submit_send: prepared zero-copy send fd=%d len=%zd", watcher->fds.worker.snd_fd, msg->length);
    io_uring_submit(&loop->ring);
+    pgagroal_log_debug("prep_submit_send: submitted sqe for zero-copy send");
    io_uring_wait_cqe(&loop->ring, &cqe);
+   pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe ? cqe->res : -1, cqe ? cqe->flags : 0U);
    sent_bytes = msg->length;
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+   pgagroal_log_debug("prep_submit_send: prepared send fd=%d len=%zd flags=0x%x", watcher->fds.worker.snd_fd, msg->length, send_flags);
    io_uring_submit(&loop->ring);
+   pgagroal_log_debug("prep_submit_send: submitted sqe");
    io_uring_wait_cqe(&loop->ring, &cqe);
+   pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe ? cqe->res : -1, cqe ? cqe->flags : 0U);
    sent_bytes = cqe->res;
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
@@ -512,6 +522,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
 #endif /* HAVE_LINUX */
+   pgagroal_log_debug("prep_submit_send: exit sent_bytes=%d", sent_bytes);
    return sent_bytes;
 }
 
@@ -521,9 +532,12 @@ pgagroal_wait_recv(void)
    int recv_bytes = 0;
 #if HAVE_LINUX
    struct io_uring_cqe* rcv_cqe = NULL;
+   pgagroal_log_debug("wait_recv: waiting for completion");
    io_uring_wait_cqe(&loop->ring, &rcv_cqe);
+   pgagroal_log_debug("wait_recv: completion res=%d flags=%u", rcv_cqe ? rcv_cqe->res : -1, rcv_cqe ? rcv_cqe->flags : 0U);
    recv_bytes = rcv_cqe->res;
    io_uring_cqe_seen(&loop->ring, rcv_cqe);
+   pgagroal_log_debug("wait_recv: seen completion recv_bytes=%d", recv_bytes);
 #endif
    return recv_bytes;
 }
