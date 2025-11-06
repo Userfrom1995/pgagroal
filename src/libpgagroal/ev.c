@@ -509,6 +509,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_wait_cqe(&loop->ring, &cqe);
    pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe ? cqe->res : -1, cqe ? cqe->flags : 0U);
    sent_bytes = cqe->res;
+   io_uring_cqe_seen(&loop->ring, cqe);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
