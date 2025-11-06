@@ -45,7 +45,6 @@ extern "C" {
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -64,13 +63,6 @@ extern "C" {
 #define EXPERIMENTAL_FEATURE_IOVECS                 0
 #define PGAGROAL_CONTEXT_MAIN  0
 #define PGAGROAL_CONTEXT_VAULT 1
-
-#if HAVE_LINUX
-#define IO_URING_OP_MARKER ((uintptr_t)0x1)
-#define IO_URING_OP_SEND   ((void*)IO_URING_OP_MARKER)
-#define IO_URING_IS_OP_MARKER(data) (((uintptr_t)(data) & IO_URING_OP_MARKER) != 0)
-#define IO_URING_SEND_DEFERRED_MAX 256
-#endif /* HAVE_LINUX */
 
 #define ALIGNMENT sysconf(_SC_PAGESIZE)
 #define MAX_EVENTS   32
