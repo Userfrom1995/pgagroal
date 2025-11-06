@@ -128,11 +128,11 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
       pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ZERO");
       return MESSAGE_STATUS_ZERO;
    }
-   // if (sent_bytes < msg->length)
-   // {
-   //    pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR");
-   //    return MESSAGE_STATUS_ERROR;
-   // }
+   if (sent_bytes < msg->length)
+   {
+      pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_ERROR");
+      return MESSAGE_STATUS_ERROR;
+   }
    pgagroal_log_debug("write_message_from_buffer: returning MESSAGE_STATUS_OK");
    return MESSAGE_STATUS_OK;
 }
