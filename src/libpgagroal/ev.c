@@ -512,6 +512,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
 #endif /* HAVE_LINUX */
+   pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d", sent_bytes);
    return sent_bytes;
 }
 
