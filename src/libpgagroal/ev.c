@@ -527,15 +527,39 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       }
 
       pgagroal_log_debug("prep_submit_send: io_uring_get_sqe returned %p", (void*)sqe);
-      io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+      io_uring_sqe_set_data(sqe, IO_URING_SEND_MARKER);
       io_uring_prep_send(sqe, fd, ((char*)msg->data) + total_sent, remaining, send_flags);
       pgagroal_log_debug("prep_submit_send: prepared send chunk fd=%d offset=%zd remaining=%zd", fd, total_sent, remaining);
 
       io_uring_submit(&loop->ring);
       pgagroal_log_debug("prep_submit_send: submitted sqe for chunk");
 
-      io_uring_wait_cqe(&loop->ring, &cqe);
-      pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe ? cqe->res : -1, cqe ? cqe->flags : 0U);
+      while (true)
+      {
+         io_uring_wait_cqe(&loop->ring, &cqe);
+         if (!cqe)
+         {
+            pgagroal_log_debug("prep_submit_send: wait returned NULL cqe, retrying");
+            continue;
+         }
+
+         if (!IO_URING_IS_SEND_MARKER(io_uring_cqe_get_data(cqe)))
+         {
+            pgagroal_log_debug("prep_submit_send: foreign completion res=%d flags=%u", cqe->res, cqe->flags);
+            int handler_rc = ev_io_uring_handler(cqe);
+            io_uring_cqe_seen(&loop->ring, cqe);
+            if (handler_rc && handler_rc != PGAGROAL_EVENT_RC_CONN_CLOSED)
+            {
+               pgagroal_log_warn("prep_submit_send: handler reported rc=%d", handler_rc);
+               return handler_rc;
+            }
+            continue;
+         }
+
+         break;
+      }
+
+      pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe->res, cqe->flags);
 
       if (cqe == NULL)
       {
