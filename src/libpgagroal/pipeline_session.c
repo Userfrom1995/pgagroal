@@ -292,12 +292,18 @@ session_client(struct io_watcher* watcher)
    wi = (struct worker_io*)watcher;
    config = (struct main_configuration*)shmem;
 
+   pgagroal_log_debug("session_client: enter slot=%d client_fd=%d server_fd=%d", wi ? wi->slot : -1,
+                      wi ? wi->client_fd : -1, wi ? wi->server_fd : -1);
+
    client_active(wi->slot);
 
    status = pgagroal_recv_message(watcher, &msg);
+   pgagroal_log_debug("session_client: recv status=%d kind=%d len=%zd", status,
+                      msg ? msg->kind : -1, msg ? msg->length : (ssize_t)-1);
 
    if (likely(status == MESSAGE_STATUS_OK))
    {
+      pgagroal_log_debug("session_client: processing message kind=%d len=%zd", msg->kind, msg->length);
       pgagroal_prometheus_network_sent_add(msg->length);
 
       if (likely(msg->kind != 'X'))
@@ -338,6 +344,7 @@ session_client(struct io_watcher* watcher)
          }
 
          status = pgagroal_send_message(watcher, msg);
+         pgagroal_log_debug("session_client: send status=%d", status);
 
          if (unlikely(status == MESSAGE_STATUS_ERROR))
          {
@@ -375,6 +382,7 @@ session_client(struct io_watcher* watcher)
    return;
 
 client_done:
+   pgagroal_log_debug("session_client: client_done status=%d errno=%d", status, errno);
    pgagroal_log_debug("[C] Client done (slot %d database %s user %s): %s (socket %d status %d)",
                       wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
                       strerror(errno), wi->client_fd, status);
@@ -395,6 +403,7 @@ client_done:
    return;
 
 client_error:
+   pgagroal_log_debug("session_client: client_error status=%d errno=%d", status, errno);
    pgagroal_log_warn("[C] Client error (slot %d database %s user %s): %s (socket %d status %d)",
                      wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
                      strerror(errno), wi->client_fd, status);
@@ -409,6 +418,7 @@ client_error:
    return;
 
 server_error:
+   pgagroal_log_debug("session_client: server_error status=%d errno=%d", status, errno);
    pgagroal_log_warn("[C] Server error (slot %d database %s user %s): %s (socket %d status %d)",
                      wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
                      strerror(errno), wi->server_fd, status);
@@ -423,6 +433,7 @@ server_error:
    return;
 
 failover:
+   pgagroal_log_debug("session_client: failover status=%d", status);
 
    client_inactive(wi->slot);
 
@@ -443,12 +454,18 @@ session_server(struct io_watcher* watcher)
 
    wi = (struct worker_io*)watcher;
 
+    pgagroal_log_debug("session_server: enter slot=%d client_fd=%d server_fd=%d", wi ? wi->slot : -1,
+                       wi ? wi->client_fd : -1, wi ? wi->server_fd : -1);
+
    client_active(wi->slot);
 
    status = pgagroal_recv_message(watcher, &msg);
+   pgagroal_log_debug("session_server: recv status=%d kind=%d len=%zd", status,
+                      msg ? msg->kind : -1, msg ? msg->length : (ssize_t)-1);
 
    if (likely(status == MESSAGE_STATUS_OK))
    {
+      pgagroal_log_debug("session_server: processing message kind=%d len=%zd", msg->kind, msg->length);
       pgagroal_prometheus_network_received_add(msg->length);
 
       int offset = 0;
@@ -493,6 +510,7 @@ session_server(struct io_watcher* watcher)
       }
 
       status = pgagroal_send_message(watcher, msg);
+      pgagroal_log_debug("session_server: send status=%d", status);
 
       if (unlikely(status != MESSAGE_STATUS_OK))
       {
@@ -529,6 +547,7 @@ session_server(struct io_watcher* watcher)
    return;
 
 client_error:
+   pgagroal_log_debug("session_server: client_error status=%d errno=%d", status, errno);
    pgagroal_log_warn("[S] Client error (slot %d database %s user %s): %s (socket %d status %d)",
                      wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
                      strerror(errno), wi->client_fd, status);
@@ -543,6 +562,7 @@ client_error:
    return;
 
 server_done:
+   pgagroal_log_debug("session_server: server_done status=%d errno=%d", status, errno);
    pgagroal_log_debug("[S] Server done (slot %d database %s user %s): %s (socket %d status %d)",
                       wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
                       strerror(errno), wi->server_fd, status);
@@ -554,6 +574,7 @@ server_done:
    return;
 
 server_error:
+   pgagroal_log_debug("session_server: server_error status=%d errno=%d", status, errno);
    pgagroal_log_warn("[S] Server error (slot %d database %s user %s): %s (socket %d status %d)",
                      wi->slot, config->connections[wi->slot].database, config->connections[wi->slot].username,
                      strerror(errno), wi->server_fd, status);

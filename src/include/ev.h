@@ -45,16 +45,12 @@ extern "C" {
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #if HAVE_LINUX
-#define IO_URING_SEND_MARKER_VALUE ((uintptr_t)0x1)
-#define IO_URING_SEND_MARKER ((void*)IO_URING_SEND_MARKER_VALUE)
-#define IO_URING_IS_SEND_MARKER(data) ((uintptr_t)(data) == IO_URING_SEND_MARKER_VALUE)
 #include <liburing.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
