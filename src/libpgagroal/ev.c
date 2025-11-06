@@ -44,9 +44,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <inttypes.h>
 #include <string.h>
-#include <stdint.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -142,8 +140,8 @@ static struct signal_watcher* signal_watchers[PGAGROAL_NSIG] = {0};
 #if HAVE_LINUX
 
 static struct io_uring_params params; /* io_uring argument params */
-static int ring_size;                   /* io_uring sqe ring_size */
-static const uint64_t IO_URING_SEND_MARKER = UINT64_C(0xfeedfacefeedface);
+static int ring_size;                  /* io_uring sqe ring_size */
+static event_watcher_t io_uring_send_marker = {0};
 
 static int epoll_flags;               /* Flags for epoll instance creation */
 
@@ -477,7 +475,6 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #if HAVE_LINUX
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
-   uint64_t cqe_raw_data = 0;
    ssize_t total_sent = 0;
    ssize_t to_send = 0;
    int send_flags = 0;
@@ -516,7 +513,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
          goto done;
       }
 
-      io_uring_sqe_set_data64(sqe, IO_URING_SEND_MARKER); /* identify this SQE as an internal send */
+      io_uring_sqe_set_data(sqe, &io_uring_send_marker); /* identify this SQE as an internal send */
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
       io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, base_ptr, to_send, send_flags, 0);
@@ -556,13 +553,12 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
             goto done;
          }
 
-         cqe_raw_data = io_uring_cqe_get_data64(cqe);
-         if (cqe_raw_data == IO_URING_SEND_MARKER)
+         cqe_watcher = io_uring_cqe_get_data(cqe);
+         if (cqe_watcher == &io_uring_send_marker)
          {
             break;
          }
 
-         cqe_watcher = (event_watcher_t*)(uintptr_t)cqe_raw_data;
          pgagroal_log_debug("prep_submit_send: draining foreign completion watcher=%p res=%d flags=%u",
                             (void*)cqe_watcher, cqe->res, cqe->flags);
 
@@ -586,10 +582,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
          goto done;
       }
 
-      cqe_raw_data = io_uring_cqe_get_data64(cqe);
-      if (unlikely(cqe_raw_data != IO_URING_SEND_MARKER))
+      if (unlikely(io_uring_cqe_get_data(cqe) != &io_uring_send_marker))
       {
-         pgagroal_log_warn("prep_submit_send: unexpected CQE user data=%" PRIu64 " while waiting for send marker", cqe_raw_data);
+         pgagroal_log_warn("prep_submit_send: unexpected CQE user data=%p while waiting for send marker", io_uring_cqe_get_data(cqe));
          io_uring_cqe_seen(&loop->ring, cqe);
          errno = EIO;
          sent_bytes = total_sent;
