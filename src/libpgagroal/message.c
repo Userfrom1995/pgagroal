@@ -137,6 +137,11 @@ read_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct mess
 {
    int read_bytes = pgagroal_wait_recv();
 
+   if (read_bytes < 0)
+   {
+      return MESSAGE_STATUS_ERROR;
+   }
+
    ((struct message*)msg)->length = read_bytes;
    msg->kind = (signed char)(*((char*)msg->data));
 
