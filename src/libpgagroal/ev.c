@@ -475,6 +475,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
    int send_flags = 0;
+   int fd = watcher != NULL ? watcher->fds.worker.snd_fd : -1;
+   ssize_t total_sent = 0;
+   ssize_t remaining = msg != NULL ? msg->length : 0;
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
@@ -482,12 +485,12 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
    pgagroal_log_debug("prep_submit_send: enter watcher=%p snd_fd=%d msg=%p len=%zd", (void*)watcher,
-                      watcher != NULL ? watcher->fds.worker.snd_fd : -1, (void*)msg, msg != NULL ? msg->length : -1);
+                      fd, (void*)msg, msg != NULL ? msg->length : -1);
 
+#if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
    sqe = io_uring_get_sqe(&loop->ring);
    pgagroal_log_debug("prep_submit_send: io_uring_get_sqe returned %p", (void*)sqe);
    io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
-
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
    /* XXX: Implement zero copy send (this has been shown to speed up a little some
     * workloads, but the implementation is still problematic). */
@@ -509,6 +512,58 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_wait_cqe(&loop->ring, &cqe);
    pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe ? cqe->res : -1, cqe ? cqe->flags : 0U);
    sent_bytes = cqe->res;
+#endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
+#else
+   /* Non-zero-copy path: submit until the entire message is sent. */
+   send_flags |= MSG_WAITALL;
+   send_flags |= MSG_NOSIGNAL;
+
+   while (remaining > 0)
+   {
+      while ((sqe = io_uring_get_sqe(&loop->ring)) == NULL)
+      {
+         pgagroal_log_debug("prep_submit_send: sqe ring full, submitting to make space");
+         io_uring_submit(&loop->ring);
+      }
+
+      pgagroal_log_debug("prep_submit_send: io_uring_get_sqe returned %p", (void*)sqe);
+      io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+      io_uring_prep_send(sqe, fd, ((char*)msg->data) + total_sent, remaining, send_flags);
+      pgagroal_log_debug("prep_submit_send: prepared send chunk fd=%d offset=%zd remaining=%zd", fd, total_sent, remaining);
+
+      io_uring_submit(&loop->ring);
+      pgagroal_log_debug("prep_submit_send: submitted sqe for chunk");
+
+      io_uring_wait_cqe(&loop->ring, &cqe);
+      pgagroal_log_debug("prep_submit_send: completion res=%d flags=%u", cqe ? cqe->res : -1, cqe ? cqe->flags : 0U);
+
+      if (cqe == NULL)
+      {
+         pgagroal_log_debug("prep_submit_send: cqe NULL, aborting");
+         return -1;
+      }
+
+      if (cqe->res < 0)
+      {
+         int err = cqe->res;
+         pgagroal_log_warn("prep_submit_send: send error=%d", err);
+         io_uring_cqe_seen(&loop->ring, cqe);
+         return err;
+      }
+
+      total_sent += cqe->res;
+      remaining -= cqe->res;
+      io_uring_cqe_seen(&loop->ring, cqe);
+      pgagroal_log_debug("prep_submit_send: chunk complete total_sent=%zd remaining=%zd", total_sent, remaining);
+      if (cqe->res == 0)
+      {
+         /* No progress, avoid infinite loop. */
+         pgagroal_log_warn("prep_submit_send: zero-byte completion, breaking to avoid stall");
+         break;
+      }
+   }
+
+   sent_bytes = (int)total_sent;
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
