@@ -69,7 +69,7 @@ extern "C" {
 #define IO_URING_OP_MARKER ((uintptr_t)0x1)
 #define IO_URING_OP_SEND   ((void*)IO_URING_OP_MARKER)
 #define IO_URING_IS_OP_MARKER(data) (((uintptr_t)(data) & IO_URING_OP_MARKER) != 0)
-#define IO_URING_SEND_DEFERRED_MAX 64
+#define IO_URING_SEND_DEFERRED_MAX 256
 #endif /* HAVE_LINUX */
 
 #define ALIGNMENT sysconf(_SC_PAGESIZE)

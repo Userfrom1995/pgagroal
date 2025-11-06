@@ -477,9 +477,12 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    int send_flags = 0;
    int submit_rc = 0;
    int fd = watcher->fds.worker.snd_fd;
+   const char* payload = (const char*)msg->data;
+   ssize_t target_length = msg->length;
    /* Defer non-send completions so they can be dispatched after the send finishes. */
    struct io_uring_cqe deferred_cqes[IO_URING_SEND_DEFERRED_MAX];
    int deferred_nr = 0;
+   int send_error = 0;
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
@@ -487,10 +490,15 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
    send_flags |= MSG_NOSIGNAL;
 
-#if !EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
-   while (sent_bytes >= 0 && sent_bytes < msg->length)
+#if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
+#define PGAGROAL_IO_URING_PREP_SEND(sqe, fd, buf, len, flags) io_uring_prep_send_zc(sqe, fd, buf, len, flags, 0)
+#else
+#define PGAGROAL_IO_URING_PREP_SEND(sqe, fd, buf, len, flags) io_uring_prep_send(sqe, fd, buf, len, flags)
+#endif
+
+   while (sent_bytes >= 0 && sent_bytes < target_length)
    {
-      int remaining = msg->length - sent_bytes;
+      int remaining = target_length - sent_bytes;
 
       while ((sqe = io_uring_get_sqe(&loop->ring)) == NULL)
       {
@@ -503,7 +511,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       }
 
       io_uring_sqe_set_data(sqe, IO_URING_OP_SEND);
-      io_uring_prep_send(sqe, fd, ((char*)msg->data) + sent_bytes, remaining, send_flags);
+      PGAGROAL_IO_URING_PREP_SEND(sqe, fd, payload + sent_bytes, remaining, send_flags);
 
       submit_rc = io_uring_submit(&loop->ring);
       if (submit_rc < 0)
@@ -544,9 +552,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 
          if (cqe->res <= 0)
          {
-            int res = cqe->res;
+            send_error = cqe->res;
             io_uring_cqe_seen(&loop->ring, cqe);
-            return res;
+            goto send_done;
          }
 
          sent_bytes += cqe->res;
@@ -555,6 +563,8 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       }
    }
 
+send_done:
+
    for (int i = 0; i < deferred_nr; i++)
    {
       int handler_rc = ev_io_uring_handler(&deferred_cqes[i]);
@@ -562,6 +572,11 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       {
          return -ECANCELED;
       }
+   }
+
+   if (send_error)
+   {
+      return send_error;
    }
 #else
    /* Zero-copy path currently unsupported for partial send retries. */
@@ -576,7 +591,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    }
 
    io_uring_sqe_set_data(sqe, IO_URING_OP_SEND);
-   io_uring_prep_send_zc(sqe, fd, msg->data, msg->length, send_flags, 0);
+   io_uring_prep_send_zc(sqe, fd, payload, target_length, send_flags, 0);
    submit_rc = io_uring_submit(&loop->ring);
    if (submit_rc < 0)
    {
@@ -590,7 +605,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    }
    if (cqe->res > 0)
    {
-      sent_bytes = msg->length;
+      sent_bytes = target_length;
    }
    io_uring_cqe_seen(&loop->ring, cqe);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
@@ -850,38 +865,8 @@ ev_io_uring_loop(void)
    {
       ts = &idle_ts;
 
-      io_uring_submit_and_wait_timeout(&loop->ring, &cqe, to_wait, ts, NULL);
 
-      if (*loop->ring.cq.koverflow)
-      {
-         pgagroal_log_fatal("io_uring overflow %u", *loop->ring.cq.koverflow);
-         pgagroal_event_loop_break();
-         return PGAGROAL_EVENT_RC_FATAL;
-      }
-      if (*loop->ring.sq.kflags & IORING_SQ_CQ_OVERFLOW)
-      {
-         pgagroal_log_fatal("io_uring overflow");
-         pgagroal_event_loop_break();
-         return PGAGROAL_EVENT_RC_FATAL;
-      }
-
-      events = 0;
-      io_uring_for_each_cqe(&loop->ring, head, cqe)
-      {
-         rc = ev_io_uring_handler(cqe);
-         if (rc)
-         {
-            pgagroal_event_loop_break();
-            break;
-         }
-         events++;
-      }
-
-      if (events)
-      {
-         io_uring_cq_advance(&loop->ring, events);
-      }
-   }
+#undef PGAGROAL_IO_URING_PREP_SEND
 
    return rc;
 }
