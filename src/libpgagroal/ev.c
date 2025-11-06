@@ -519,41 +519,69 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
 int
 pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
-    int sent_bytes = -1;
+   ssize_t sent_bytes = 0;
 #if HAVE_LINUX
-    struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring);
-    struct io_uring_cqe* cqe = NULL;
-    int send_flags = MSG_NOSIGNAL;
+   int fd = watcher->fds.worker.snd_fd;
 
-    if (!sqe) {
-        pgagroal_log_warn("No SQE available in io_uring ring");
-        return -1;
-    }
+   while (sent_bytes < msg->length)
+   {
+      struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring);
+      struct io_uring_cqe* cqe = NULL;
+      ssize_t remaining = msg->length - sent_bytes;
+
+      if (!sqe)
+      {
+         /* Flush pending submissions and retry */
+         io_uring_submit(&loop->ring);
+         sqe = io_uring_get_sqe(&loop->ring);
+         if (!sqe)
+         {
+            pgagroal_log_warn("No SQE available in io_uring ring");
+            return sent_bytes > 0 ? sent_bytes : -1;
+         }
+      }
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
-    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+      io_uring_prep_send_zc(sqe, fd, msg->data + sent_bytes, remaining, MSG_NOSIGNAL, 0);
 #else
-    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+      io_uring_prep_send(sqe, fd, msg->data + sent_bytes, remaining, MSG_NOSIGNAL);
 #endif
-    io_uring_sqe_set_data(sqe, msg);
+      io_uring_sqe_set_data(sqe, msg);
 
-    io_uring_submit(&loop->ring);
+      io_uring_submit(&loop->ring);
 
-    // For now, wait synchronously (blocking)
-    io_uring_wait_cqe(&loop->ring, &cqe);
+      if (io_uring_wait_cqe(&loop->ring, &cqe) < 0)
+      {
+         pgagroal_log_warn("Failed waiting for send completion");
+         return sent_bytes > 0 ? sent_bytes : -1;
+      }
 
-    if (cqe->res < 0) {
-        pgagroal_log_warn("send failed: %s", strerror(-cqe->res));
-        sent_bytes = -1;
-    } else {
-        sent_bytes = cqe->res;
-    }
+      if (cqe->res == 0)
+      {
+         io_uring_cqe_seen(&loop->ring, cqe);
+         return sent_bytes;
+      }
 
-    io_uring_cqe_seen(&loop->ring, cqe);
+      if (cqe->res < 0)
+      {
+         int err = -cqe->res;
+         io_uring_cqe_seen(&loop->ring, cqe);
+
+         if (err == EINTR || err == EAGAIN)
+         {
+            continue;
+         }
+
+         pgagroal_log_warn("send failed: %s", strerror(err));
+         return sent_bytes > 0 ? sent_bytes : -1;
+      }
+
+      sent_bytes += cqe->res;
+      io_uring_cqe_seen(&loop->ring, cqe);
+   }
 #endif
 
-    pgagroal_log_debug("pgagroal_event_prep_submit_send: sent_bytes=%d", sent_bytes);
-    return sent_bytes;
+   return sent_bytes;
 }
 
 
