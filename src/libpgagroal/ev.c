@@ -143,7 +143,6 @@ static struct signal_watcher* signal_watchers[PGAGROAL_NSIG] = {0};
 
 static struct io_uring_params params; /* io_uring argument params */
 static int ring_size;                  /* io_uring sqe ring_size */
-static event_watcher_t io_uring_send_marker = {0};
 
 static int epoll_flags;               /* Flags for epoll instance creation */
 
@@ -575,7 +574,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
          goto done;
       }
 
-      io_uring_sqe_set_data(sqe, &io_uring_send_marker); /* identify this SQE as an internal send */
+      io_uring_sqe_set_data(sqe, NULL); /* identify this SQE as an internal send */
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
       io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, base_ptr, to_send, send_flags, 0);
@@ -618,7 +617,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
          }
 
          cqe_watcher = io_uring_cqe_get_data(cqe);
-         if (cqe_watcher == &io_uring_send_marker)
+         if (cqe_watcher == NULL)
          {
             break;
          }
