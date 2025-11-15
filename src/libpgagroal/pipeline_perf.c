@@ -96,18 +96,8 @@ performance_start(struct event_loop* loop __attribute__((unused)), struct worker
 }
 
 static void
-performance_stop(struct event_loop* loop __attribute__((unused)), struct worker_io* w)
+performance_stop(struct event_loop* loop __attribute__((unused)), struct worker_io* w __attribute__((unused)))
 {
-   struct main_configuration* config;
-
-   config = (struct main_configuration*)shmem;
-
-   if (w->slot >= 0 && w->slot < config->max_connections)
-   {
-      pgagroal_return_connection(w->slot, w->server_ssl, true);
-      w->server_fd = -1;
-      w->slot = -1;
-   }
 }
 
 static void
