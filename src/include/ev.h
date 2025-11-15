@@ -144,6 +144,7 @@ struct io_watcher
       } worker;                            /**< Struct that holds the file descriptors for the worker */
       int __fds[2];
    } fds;                                  /**< Set of file descriptors used for I/O */
+   int last_read_bytes;                    /**< Last number of bytes read (io_uring backend). */
    bool ssl;                               /**< Indicates if SSL/TLS is used on this connection. */
    void (*cb)(struct io_watcher* watcher); /**< Event callback. */
 };

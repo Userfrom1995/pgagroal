@@ -97,25 +97,26 @@ pgagroal_write_socket_message(int socket, struct message* msg)
 }
 
 static int
-read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message** msg_p)
+read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
 {
-   struct message* msg = pgagroal_memory_message();
-   int read_bytes = pgagroal_wait_recv();
+   struct message* msg = NULL;
 
-   msg->length = read_bytes;
-
-   if (msg->length == 0)
+   if (watcher->last_read_bytes == 0)
    {
       return MESSAGE_STATUS_ZERO;
    }
 
-   if (msg->length < 0)
+   if (watcher->last_read_bytes < 0)
    {
       return MESSAGE_STATUS_ERROR;
    }
 
+   msg = pgagroal_memory_message();
+   msg->length = watcher->last_read_bytes;
+
    msg->kind = (signed char)(*((char*)msg->data));
    *msg_p = msg;
+
    return MESSAGE_STATUS_OK;
 }
 
