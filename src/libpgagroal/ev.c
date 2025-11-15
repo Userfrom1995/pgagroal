@@ -786,7 +786,6 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
    event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
    struct io_watcher* io;
    struct periodic_watcher* per;
-   struct message* msg = pgagroal_memory_message();
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    loop->bid = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
@@ -833,15 +832,14 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
-         if (!(cqe->res))
+         io->last_read_bytes = cqe->res;
+         if (cqe->res <= 0)
          {
             pgagroal_log_debug("Connection closed");
-            msg->length = 0;
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
          }
          else
          {
-            msg->length = cqe->res;
             rc = PGAGROAL_EVENT_RC_OK;
          }
          io->cb(io);
