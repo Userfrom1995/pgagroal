@@ -28,6 +28,7 @@
 
 /* pgagroal */
 #include <pgagroal.h>
+#include <connection.h>
 #include <ev.h>
 #include <logging.h>
 #include <management.h>
