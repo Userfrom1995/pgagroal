@@ -100,7 +100,7 @@ static int
 read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message** msg_p)
 {
    struct message* msg = pgagroal_memory_message();
-   int read_bytes = pgagroal_wait_recv();
+   // int read_bytes = pgagroal_wait_recv();
 
    msg->length = read_bytes;
 
