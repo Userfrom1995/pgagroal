@@ -114,6 +114,15 @@ read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
    msg = pgagroal_memory_message();
    msg->length = watcher->last_read_bytes;
 
+   // Copy data from the appropriate buffer
+   char* src;
+#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+   src = loop->br.buf + loop->bid * DEFAULT_BUFFER_SIZE;
+#else
+   src = watcher->recv_buffer;
+#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+   memcpy(msg->data, src, watcher->last_read_bytes);
+
    // Basic validation: ensure we have at least the message header (kind + length)
    if (msg->length < 5)
    {

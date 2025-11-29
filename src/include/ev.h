@@ -145,6 +145,7 @@ struct io_watcher
       int __fds[2];
    } fds;                                  /**< Set of file descriptors used for I/O */
    int last_read_bytes;                    /**< Last number of bytes read (io_uring backend). */
+   char* recv_buffer;                      /**< Buffer for received data (io_uring non-multishot). */
    bool ssl;                               /**< Indicates if SSL/TLS is used on this connection. */
    void (*cb)(struct io_watcher* watcher); /**< Event callback. */
 };

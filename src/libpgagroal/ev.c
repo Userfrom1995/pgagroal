@@ -579,7 +579,7 @@ static int
 ev_io_uring_io_start(struct io_watcher* watcher)
 {
    struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring);
-   struct message* msg = NULL;
+   // struct message* msg = NULL;
 
    io_uring_sqe_set_data(sqe, watcher);
    switch (watcher->event_watcher.type)
@@ -593,8 +593,8 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          sqe->buf_group = 0;
          sqe->flags |= IOSQE_BUFFER_SELECT;
 #else
-         msg = pgagroal_memory_message();
-         io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE, 0);
+         watcher->recv_buffer = calloc(1, DEFAULT_BUFFER_SIZE);
+         io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, watcher->recv_buffer, DEFAULT_BUFFER_SIZE, 0);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
          break;
       default:
@@ -630,6 +630,12 @@ ev_io_uring_io_stop(struct io_watcher* target)
    io_uring_prep_cancel(sqe, (void*)target, 0);
 
    io_uring_submit_and_wait_timeout(&loop->ring, &cqe, 0, &ts, NULL);
+
+   if (target->recv_buffer)
+   {
+      free(target->recv_buffer);
+      target->recv_buffer = NULL;
+   }
 
    return rc;
 }
