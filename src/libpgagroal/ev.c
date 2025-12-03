@@ -255,7 +255,9 @@ pgagroal_event_loop_init(void)
       params.flags |= IORING_SETUP_SINGLE_ISSUER;
 
 #if EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED
-      params.flags |= IORING_FEAT_FAST_POLL;
+      /* IORING_FEAT_FAST_POLL is a feature flag reported by the kernel, not a setup flag;
+       * keep this block for compatibility but do not attempt to set it explicitly.
+       */
 #endif /* EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED */
 #if EXPERIMENTAL_FEATURE_USE_HUGE_ENABLED
       /* XXX: Maybe this could be interesting if we cache the rings and the buffers? */
@@ -334,10 +336,15 @@ pgagroal_event_loop_destroy(void)
 
    rc = loop_destroy();
 
+   /* Only worker watchers have a valid worker socket to disconnect. */
    for (int i = 0; i < loop->events_nr; i++)
    {
-      watcher = (struct io_watcher*)loop->events[i];
-      pgagroal_disconnect(watcher->fds.worker.snd_fd);
+      event_watcher_t* ev = loop->events[i];
+      if (ev->type == PGAGROAL_EVENT_TYPE_WORKER)
+      {
+         watcher = (struct io_watcher*)ev;
+         pgagroal_disconnect(watcher->fds.worker.snd_fd);
+      }
    }
 
    free(loop);
@@ -491,7 +498,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
    io_uring_submit(&loop->ring);
    io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = msg->length;
+   sent_bytes = cqe->res;
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
@@ -500,6 +507,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_wait_cqe(&loop->ring, &cqe);
    sent_bytes = cqe->res;
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
+
+   /* Mark the completion as consumed to avoid CQ overflow. */
+   io_uring_cqe_seen(&loop->ring, cqe);
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    io_uring_buf_ring_add(loop->br.br,

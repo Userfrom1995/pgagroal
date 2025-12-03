@@ -178,8 +178,19 @@ transaction_stop(struct event_loop* loop, struct worker_io* w)
          pgagroal_io_stop(&server_io.io);
          io_watcher_active = false;
       }
+
       pgagroal_tracking_event_slot(TRACKER_TX_RETURN_CONNECTION_STOP, w->slot);
-      pgagroal_return_connection(slot, w->server_ssl, true);
+
+      if (fatal)
+      {
+         /* Do not reuse connections that have seen a server FATAL/PANIC. */
+         pgagroal_kill_connection(slot, w->server_ssl);
+      }
+      else
+      {
+         pgagroal_return_connection(slot, w->server_ssl, true);
+      }
+
       slot = -1;
    }
 
