@@ -123,22 +123,7 @@ read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
    memcpy(msg->data, src, watcher->last_read_bytes);
 
-   // Basic validation: ensure we have at least the message header (kind + length)
-   if (msg->length < 5)
-   {
-      pgagroal_log_error("Received incomplete message header: %d bytes", msg->length);
-      return MESSAGE_STATUS_ERROR;
-   }
-
    msg->kind = (signed char)(*((char*)msg->data));
-
-   // Check if the declared message length matches received bytes
-   int declared_length = pgagroal_read_int32(msg->data + 1) + 1; // +1 for kind byte
-   if (declared_length > msg->length)
-   {
-      pgagroal_log_error("Message truncated: declared %d bytes, received %d bytes", declared_length, msg->length);
-      return MESSAGE_STATUS_ERROR;
-   }
 
    *msg_p = msg;
 
