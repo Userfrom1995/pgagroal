@@ -143,9 +143,9 @@ write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
    }
    if (sent_bytes < 0)
    {
+      // errno already set by pgagroal_event_prep_submit_send
       pgagroal_log_warn("write_from_buffer: ERROR sent_bytes=%d errno=%d (%s) fd=%d",
                        sent_bytes, errno, strerror(errno), watcher->fds.worker.snd_fd);
-      errno = -sent_bytes;
       return MESSAGE_STATUS_ERROR;
    }
    if (sent_bytes < msg->length)
