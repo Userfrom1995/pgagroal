@@ -511,7 +511,6 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
       io_uring_cqe_seen(&loop->ring, cqe);
       pgagroal_log_trace("prep_submit_send: zero_copy cqe->res=%d total=%zd", sent_bytes, total_sent + sent_bytes);
 #else
-      send_flags |= MSG_WAITALL;
       send_flags |= MSG_NOSIGNAL;
       io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data + total_sent, remaining, send_flags);
       pgagroal_log_trace("prep_submit_send: submit fd=%d remaining=%zd flags=0x%x", watcher->fds.worker.snd_fd, remaining, send_flags);
@@ -853,6 +852,11 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
       else if (rc == -EALREADY)
       {
          pgagroal_log_trace("io_uring_prep_cancel: operation already in progress: %s", strerror(-rc));
+      }
+      else if (rc == -ECONNRESET || rc == -EPIPE)
+      {
+         /* Connection closed - expected during cleanup */
+         pgagroal_log_trace("io_uring_prep_cancel: connection closed: %s", strerror(-rc));
       }
       else if (rc < 0)
       {
