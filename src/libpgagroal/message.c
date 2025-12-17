@@ -101,17 +101,24 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 {
    struct message* msg = pgagroal_memory_message();
 
+   pgagroal_log_trace("read_from_buffer: msg_len=%zd msg_addr=%p", msg ? msg->length : (ssize_t)-1, (void*)msg);
+
    if (msg->length == 0)
    {
+      pgagroal_log_trace("read_from_buffer: ZERO length");
       return MESSAGE_STATUS_ZERO;
    }
 
    if (msg->length < 0)
    {
+      pgagroal_log_warn("read_from_buffer: ERROR length=%zd errno=%d (%s)", msg->length, errno, strerror(errno));
+      *msg_p = NULL;
+      errno = -msg->length;
       return MESSAGE_STATUS_ERROR;
    }
 
    msg->kind = (signed char)(*((char*)msg->data));
+   pgagroal_log_trace("read_from_buffer: OK kind=%c length=%zd", msg->kind, msg->length);
    *msg_p = msg;
    return MESSAGE_STATUS_OK;
 }
@@ -119,16 +126,35 @@ read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), str
 static int
 write_message_from_buffer(struct io_watcher* watcher, struct message* msg)
 {
+   pgagroal_log_trace("write_from_buffer: msg_len=%zd snd_fd=%d msg_addr=%p",
+                     msg ? msg->length : (ssize_t)-1,
+                     watcher ? watcher->fds.worker.snd_fd : -1,
+                     (void*)msg);
+
    int sent_bytes = pgagroal_event_prep_submit_send(watcher, msg);
+
+   pgagroal_log_trace("write_from_buffer: sent_bytes=%d (expected=%zd fd=%d)",
+                     sent_bytes, msg->length, watcher->fds.worker.snd_fd);
 
    if (msg->length == 0)
    {
+      pgagroal_log_trace("write_from_buffer: ZERO length");
       return MESSAGE_STATUS_ZERO;
+   }
+   if (sent_bytes < 0)
+   {
+      pgagroal_log_warn("write_from_buffer: ERROR sent_bytes=%d errno=%d (%s) fd=%d",
+                       sent_bytes, errno, strerror(errno), watcher->fds.worker.snd_fd);
+      errno = -sent_bytes;
+      return MESSAGE_STATUS_ERROR;
    }
    if (sent_bytes < msg->length)
    {
+      pgagroal_log_warn("write_from_buffer: SHORT write sent=%d expected=%zd fd=%d",
+                       sent_bytes, msg->length, watcher->fds.worker.snd_fd);
       return MESSAGE_STATUS_ERROR;
    }
+   pgagroal_log_trace("write_from_buffer: OK sent=%d", sent_bytes);
    return MESSAGE_STATUS_OK;
 }
 

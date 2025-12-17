@@ -481,6 +481,8 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    msg->data = data;
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
+   pgagroal_log_trace("prep_submit_send: fd=%d msg_len=%zd", watcher->fds.worker.snd_fd, msg->length);
+
    sqe = io_uring_get_sqe(&loop->ring);
    io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
 
@@ -489,16 +491,20 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
     * workloads, but the implementation is still problematic). */
    // send_flags |= MSG_WAITALL;
    io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
+   pgagroal_log_trace("prep_submit_send: zero_copy submit fd=%d", watcher->fds.worker.snd_fd);
    io_uring_submit(&loop->ring);
    io_uring_wait_cqe(&loop->ring, &cqe);
    sent_bytes = msg->length;
+   pgagroal_log_trace("prep_submit_send: zero_copy cqe->res=%d", cqe->res);
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
+   pgagroal_log_trace("prep_submit_send: submit fd=%d flags=0x%x", watcher->fds.worker.snd_fd, send_flags);
    io_uring_submit(&loop->ring);
    io_uring_wait_cqe(&loop->ring, &cqe);
    sent_bytes = cqe->res;
+   pgagroal_log_trace("prep_submit_send: cqe->res=%d (fd=%d)", sent_bytes, watcher->fds.worker.snd_fd);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
@@ -521,8 +527,10 @@ pgagroal_wait_recv(void)
    int recv_bytes = 0;
 #if HAVE_LINUX
    struct io_uring_cqe* rcv_cqe = NULL;
+   pgagroal_log_trace("wait_recv: waiting for CQE");
    io_uring_wait_cqe(&loop->ring, &rcv_cqe);
    recv_bytes = rcv_cqe->res;
+   pgagroal_log_trace("wait_recv: cqe->res=%d", recv_bytes);
    io_uring_cqe_seen(&loop->ring, rcv_cqe);
 #endif
    return recv_bytes;
@@ -835,15 +843,29 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
       case PGAGROAL_EVENT_TYPE_MAIN:
          io = (struct io_watcher*)watcher;
          io->fds.main.client_fd = cqe->res;
+         pgagroal_log_trace("handler: MAIN accept cqe->res=%d", cqe->res);
+         if (cqe->res < 0)
+         {
+            pgagroal_log_warn("handler: MAIN accept failed: %s", strerror(-cqe->res));
+            errno = -cqe->res;
+         }
          io->cb(io);
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
+         pgagroal_log_trace("handler: WORKER recv cqe->res=%d rcv_fd=%d", cqe->res, io->fds.worker.rcv_fd);
          if (!(cqe->res))
          {
             pgagroal_log_debug("Connection closed");
             msg->length = 0;
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
+         }
+         else if (cqe->res < 0)
+         {
+            pgagroal_log_warn("handler: WORKER recv failed: %s (fd=%d)", strerror(-cqe->res), io->fds.worker.rcv_fd);
+            msg->length = cqe->res;
+            errno = -cqe->res;
+            rc = PGAGROAL_EVENT_RC_ERROR;
          }
          else
          {
