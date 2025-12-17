@@ -630,6 +630,8 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          sqe->buf_group = 0;
          sqe->flags |= IOSQE_BUFFER_SELECT;
 #else
+         /* Reset message state before each recv to prevent stale data corruption */
+         pgagroal_memory_free();
          msg = pgagroal_memory_message();
          io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE, 0);
          
@@ -829,7 +831,7 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
    event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
    struct io_watcher* io;
    struct periodic_watcher* per;
-   struct message* msg = pgagroal_memory_message();
+   struct message* msg = NULL;
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    loop->bid = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
@@ -887,17 +889,20 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
+         msg = pgagroal_memory_message();
          pgagroal_log_trace("handler: WORKER recv cqe->res=%d rcv_fd=%d", cqe->res, io->fds.worker.rcv_fd);
          if (!(cqe->res))
          {
             pgagroal_log_debug("Connection closed");
             msg->length = 0;
+            msg->kind = 0;
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
          }
          else if (cqe->res < 0)
          {
             pgagroal_log_warn("handler: WORKER recv failed: %s (fd=%d)", strerror(-cqe->res), io->fds.worker.rcv_fd);
             msg->length = cqe->res;
+            msg->kind = 0;
             errno = -cqe->res;
             rc = PGAGROAL_EVENT_RC_ERROR;
          }
