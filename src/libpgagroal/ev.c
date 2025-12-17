@@ -475,6 +475,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
    int send_flags = 0;
+   size_t total_sent = 0;
+   size_t remaining = msg->length;
+   
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
    void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
@@ -483,30 +486,56 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 
    pgagroal_log_trace("prep_submit_send: fd=%d msg_len=%zd", watcher->fds.worker.snd_fd, msg->length);
 
-   sqe = io_uring_get_sqe(&loop->ring);
-   io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+   // Loop until all bytes are sent
+   while (total_sent < msg->length)
+   {
+      remaining = msg->length - total_sent;
+      
+      sqe = io_uring_get_sqe(&loop->ring);
+      if (sqe == NULL)
+      {
+         errno = ENOBUFS;
+         return -1;
+      }
+      io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
 
 #if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
-   /* XXX: Implement zero copy send (this has been shown to speed up a little some
-    * workloads, but the implementation is still problematic). */
-   // send_flags |= MSG_WAITALL;
-   io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
-   pgagroal_log_trace("prep_submit_send: zero_copy submit fd=%d", watcher->fds.worker.snd_fd);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = cqe->res;
-   io_uring_cqe_seen(&loop->ring, cqe);
-   pgagroal_log_trace("prep_submit_send: zero_copy cqe->res=%d", sent_bytes);
+      /* XXX: Implement zero copy send (this has been shown to speed up a little some
+       * workloads, but the implementation is still problematic). */
+      // send_flags |= MSG_WAITALL;
+      io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data + total_sent, remaining, send_flags, 0);
+      pgagroal_log_trace("prep_submit_send: zero_copy submit fd=%d remaining=%zd", watcher->fds.worker.snd_fd, remaining);
+      io_uring_submit(&loop->ring);
+      io_uring_wait_cqe(&loop->ring, &cqe);
+      sent_bytes = cqe->res;
+      io_uring_cqe_seen(&loop->ring, cqe);
+      pgagroal_log_trace("prep_submit_send: zero_copy cqe->res=%d total=%zd", sent_bytes, total_sent + sent_bytes);
 #else
-   send_flags |= MSG_WAITALL;
-   send_flags |= MSG_NOSIGNAL;
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
-   pgagroal_log_trace("prep_submit_send: submit fd=%d flags=0x%x", watcher->fds.worker.snd_fd, send_flags);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = cqe->res;
-   pgagroal_log_trace("prep_submit_send: cqe->res=%d (fd=%d)", sent_bytes, watcher->fds.worker.snd_fd);
+      send_flags |= MSG_WAITALL;
+      send_flags |= MSG_NOSIGNAL;
+      io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data + total_sent, remaining, send_flags);
+      pgagroal_log_trace("prep_submit_send: submit fd=%d remaining=%zd flags=0x%x", watcher->fds.worker.snd_fd, remaining, send_flags);
+      io_uring_submit(&loop->ring);
+      io_uring_wait_cqe(&loop->ring, &cqe);
+      sent_bytes = cqe->res;
+      pgagroal_log_trace("prep_submit_send: cqe->res=%d total=%zd (fd=%d)", sent_bytes, total_sent + sent_bytes, watcher->fds.worker.snd_fd);
 #endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
+
+      // Check for errors
+      if (sent_bytes < 0)
+      {
+         errno = -sent_bytes;
+         return -1;
+      }
+      
+      if (sent_bytes == 0)
+      {
+         errno = ECONNRESET;
+         return -1;
+      }
+
+      total_sent += sent_bytes;
+   }
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    io_uring_buf_ring_add(loop->br.br,
@@ -519,7 +548,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 
 #endif /* HAVE_LINUX */
-   return sent_bytes;
+   return total_sent;
 }
 
 int
