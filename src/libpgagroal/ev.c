@@ -494,8 +494,9 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    pgagroal_log_trace("prep_submit_send: zero_copy submit fd=%d", watcher->fds.worker.snd_fd);
    io_uring_submit(&loop->ring);
    io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = msg->length;
-   pgagroal_log_trace("prep_submit_send: zero_copy cqe->res=%d", cqe->res);
+   sent_bytes = cqe->res;
+   io_uring_cqe_seen(&loop->ring, cqe);
+   pgagroal_log_trace("prep_submit_send: zero_copy cqe->res=%d", sent_bytes);
 #else
    send_flags |= MSG_WAITALL;
    send_flags |= MSG_NOSIGNAL;
