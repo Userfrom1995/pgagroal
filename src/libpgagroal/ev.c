@@ -596,10 +596,10 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          msg = pgagroal_memory_message();
          io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE, 0);
          
-         printf("==== start ==== \n");
-         if (msg != NULL)
-             pgagroal_log_mem(msg->data, msg->length);
-         printf("==== end ==== \n");
+         // printf("==== start ==== \n");
+         // if (msg != NULL)
+         //     pgagroal_log_mem(msg->data, msg->length);
+         // printf("==== end ==== \n");
 
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
          break;
