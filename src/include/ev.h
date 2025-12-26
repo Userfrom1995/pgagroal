@@ -56,17 +56,11 @@ extern "C" {
 #include <sys/signalfd.h>
 #endif /* HAVE_LINUX */
 
-#define EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED      0
-#define EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED      0
-#define EXPERIMENTAL_FEATURE_USE_HUGE_ENABLED       0
-#define EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED 0
-#define EXPERIMENTAL_FEATURE_IOVECS                 0
 #define PGAGROAL_CONTEXT_MAIN                       0
 #define PGAGROAL_CONTEXT_VAULT                      1
 
 #define ALIGNMENT                                   sysconf(_SC_PAGESIZE)
 #define MAX_EVENTS                                  32
-#define INITIAL_BUFFER_COUNT                        1
 #if HAVE_LINUX
 #define PGAGROAL_NSIG _NSIG
 #else
@@ -190,27 +184,12 @@ struct event_loop
    event_watcher_t* events[MAX_EVENTS]; /**< List of events */
    int events_nr;                       /**< Size of list of events */
 
-   struct
-   {
-      struct io_uring_buf_ring* br; /**< Buffer ring used internally by io_uring */
-      void* buf;                    /**< Pointer to the actual buffer being used */
-      bool pending_send;            /**< A send is still pending */
-      int cnt;                      /**< The number of buffers */
-   } br;                            /**< The buffer ring struct */
-
 #if HAVE_LINUX
    struct io_uring ring; /**< io_uring ring */
-   int bid;              /**< Next buffer id */
-#if EXPERIMENTAL_FEATURE_IOVECS
-   /* XXX: Test with iovecs for send/recv io_uring */
-   int iovecs_nr;
-   struct iovec* iovecs;
-#endif          /* EXPERIMENTAL_FEATURE_IOVECS */
-   int epollfd; /**< File descriptor for the epoll instance (used with epoll backend). */
+   int epollfd;          /**< File descriptor for the epoll instance (used with epoll backend). */
 #else
    int kqueuefd; /**< File descriptor for the kqueue instance (used with kqueue backend). */
 #endif           /* HAVE_LINUX */
-   void* buffer; /**< Pointer to a buffer used to read in bytes. */
 };
 
 /**
