@@ -449,49 +449,6 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
    return periodic_stop(watcher);
 }
 
-// ...existing code...
-int
-pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
-{
-   int sent_bytes = 0;
-#if HAVE_LINUX
-   struct io_uring_sqe* sqe = NULL;
-   struct io_uring_cqe* cqe = NULL;
-   int ret;
-
-   if (unlikely(!loop))
-   {
-      return MESSAGE_STATUS_ERROR;
-   }
-
-   sqe = io_uring_get_sqe(&loop->ring);
-   if (!sqe)
-   {
-      /* If SQ is full, submit existing entries to clear space */
-      io_uring_submit(&loop->ring);
-      sqe = io_uring_get_sqe(&loop->ring);
-      if (!sqe)
-      {
-         pgagroal_log_error("io_uring: SQ ring full");
-         return MESSAGE_STATUS_ERROR;
-      }
-   }
-
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, 0);
-   io_uring_sqe_set_data(sqe, watcher);
-
-   io_uring_submit(&loop->ring);
-
-   ret = io_uring_wait_cqe(&loop->ring, &cqe);
-   if (ret < 0)
-   {
-      pgagroal_log_error("io_uring: wait_cqe failed: %s", strerror(-ret));
-      return MESSAGE_STATUS_ERROR;
-   }
-
-   sent_bytes = cqe->res;
-   io_uring_cqe// filepath: src/libpgagroal/ev.c
-// ...existing code...
 int
 pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
