@@ -466,7 +466,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_wait_cqe(&loop->ring, &cqe);
    
    sent_bytes = cqe->res;
-   io_uring_cqe_seen(&loop->ring, cqe);
+   // io_uring_cqe_seen(&loop->ring, cqe);
 #endif /* HAVE_LINUX */
    return sent_bytes;
 }
