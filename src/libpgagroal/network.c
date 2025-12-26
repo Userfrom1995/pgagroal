@@ -142,6 +142,27 @@ pgagroal_bind(const char* hostname, int port, int** fds, int* length, bool no_de
    return bind_host(hostname, port, fds, length, &default_buffer_size, no_delay, backlog);
 }
 
+static int
+set_nonblocking(int fd)
+{
+   int flags = fcntl(fd, F_GETFL, 0);
+   if (flags == -1)
+   {
+      pgagroal_log_warn("fcntl F_GETFL: %d %s", fd, strerror(errno));
+      errno = 0;
+      return 1;
+   }
+
+   if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+   {
+      pgagroal_log_warn("fcntl F_SETFL O_NONBLOCK: %d %s", fd, strerror(errno));
+      errno = 0;
+      return 1;
+   }
+
+   return 0;
+}
+
 /**
  *
  */
@@ -209,6 +230,13 @@ pgagroal_bind_unix_socket(const char* directory, const char* file, int* fd)
    {
       pgagroal_log_error("pgagroal_bind_unix_socket: listen: %s/%s %s", directory, file, strerror(errno));
       errno = 0;
+      goto error;
+   }
+
+   /* Set socket to non-blocking for io_uring */
+   if (set_nonblocking(*fd))
+   {
+      pgagroal_log_error("pgagroal_bind_unix_socket: set_nonblocking failed for %s/%s", directory, file);
       goto error;
    }
 
@@ -332,6 +360,17 @@ pgagroal_connect(const char* hostname, int port, int* fd, bool keep_alive, bool 
             *fd = -1;
             continue;
          }
+
+         /* Set socket to non-blocking for io_uring */
+         if (set_nonblocking(*fd))
+         {
+            pgagroal_log_debug("Failed to set socket to non-blocking");
+            error = errno;
+            pgagroal_disconnect(*fd);
+            errno = 0;
+            *fd = -1;
+            continue;
+         }
       }
    }
 
@@ -383,6 +422,16 @@ pgagroal_connect_unix_socket(const char* directory, const char* file, int* fd)
    if (connect(*fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
    {
       pgagroal_log_trace("pgagroal_connect_unix_socket: connect: %s/%s %s", directory, file, strerror(errno));
+      pgagroal_disconnect(*fd);
+      errno = 0;
+      *fd = -1;
+      return 1;
+   }
+
+   /* Set socket to non-blocking for io_uring */
+   if (set_nonblocking(*fd))
+   {
+      pgagroal_log_debug("Failed to set Unix socket to non-blocking");
       pgagroal_disconnect(*fd);
       errno = 0;
       *fd = -1;
@@ -649,6 +698,14 @@ bind_host(const char* hostname, int port, int** fds, int* length, int* buffer_si
       {
          pgagroal_disconnect(sockfd);
          pgagroal_log_debug("server: listen: %s:%d (%s)", hostname, port, strerror(errno));
+         continue;
+      }
+
+      /* Set socket to non-blocking for io_uring */
+      if (set_nonblocking(sockfd))
+      {
+         pgagroal_disconnect(sockfd);
+         pgagroal_log_debug("server: set_nonblocking: %s:%d", hostname, port);
          continue;
       }
 
