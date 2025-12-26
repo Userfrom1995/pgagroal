@@ -97,9 +97,16 @@ pgagroal_write_socket_message(int socket, struct message* msg)
 }
 
 static int
-read_message_from_buffer(struct io_watcher* watcher __attribute__((unused)), struct message** msg_p)
+read_message_from_buffer(struct io_watcher* watcher, struct message** msg_p)
 {
-   struct message* msg = pgagroal_memory_message();
+   struct message* msg = watcher->msg;
+
+   /* The message buffer is attached to the watcher and populated by io_uring handler */
+   if (msg == NULL)
+   {
+      pgagroal_log_error("read_message_from_buffer: watcher->msg is NULL");
+      return MESSAGE_STATUS_ERROR;
+   }
 
    if (msg->length == 0)
    {

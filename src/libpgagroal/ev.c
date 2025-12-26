@@ -357,6 +357,7 @@ pgagroal_event_accept_init(struct io_watcher* watcher, int listen_fd, io_cb cb)
    watcher->event_watcher.type = PGAGROAL_EVENT_TYPE_MAIN;
    watcher->fds.main.listen_fd = listen_fd;
    watcher->fds.main.client_fd = -1;
+   watcher->msg = NULL;
    watcher->cb = cb;
    return PGAGROAL_EVENT_RC_OK;
 }
@@ -367,6 +368,7 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
    watcher->event_watcher.type = PGAGROAL_EVENT_TYPE_WORKER;
    watcher->fds.worker.rcv_fd = rcv_fd;
    watcher->fds.worker.snd_fd = snd_fd;
+   watcher->msg = NULL;
    watcher->cb = cb;
    return PGAGROAL_EVENT_RC_OK;
 }
@@ -517,7 +519,12 @@ static int
 ev_io_uring_io_start(struct io_watcher* watcher)
 {
    struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring);
-   struct message* msg = NULL;
+   
+   if (!sqe)
+   {
+      pgagroal_log_error("Failed to get io_uring SQE");
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
 
    io_uring_sqe_set_data(sqe, watcher);
    
@@ -528,14 +535,26 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          break;
          
       case PGAGROAL_EVENT_TYPE_WORKER:
-         msg = pgagroal_memory_message();
-         io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE, 0);
+         /* Allocate buffer for this watcher if not already allocated */
+         if (watcher->msg == NULL)
+         {
+            watcher->msg = pgagroal_memory_message();
+            if (watcher->msg == NULL)
+            {
+               pgagroal_log_error("Failed to allocate message buffer");
+               return PGAGROAL_EVENT_RC_ERROR;
+            }
+         }
+         io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, watcher->msg->data, DEFAULT_BUFFER_SIZE, 0);
          break;
          
       default:
          pgagroal_log_fatal("unknown event type: %d", watcher->event_watcher.type);
-         exit(1);
+         return PGAGROAL_EVENT_RC_FATAL;
    }
+   
+   /* Submit the operation */
+   io_uring_submit(&loop->ring);
    
    return PGAGROAL_EVENT_RC_OK;
 }
@@ -567,6 +586,13 @@ ev_io_uring_io_stop(struct io_watcher* target)
 
    io_uring_submit_and_wait_timeout(&loop->ring, &cqe, 0, &ts, NULL);
 
+   /* Free the message buffer if allocated */
+   if (target->msg != NULL)
+   {
+      pgagroal_free_message(target->msg);
+      target->msg = NULL;
+   }
+
    return rc;
 }
 
@@ -583,8 +609,14 @@ static int
 ev_io_uring_periodic_start(struct periodic_watcher* watcher)
 {
    struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring);
+   if (!sqe)
+   {
+      pgagroal_log_error("Failed to get io_uring SQE for periodic start");
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
    io_uring_sqe_set_data(sqe, watcher);
    io_uring_prep_timeout(sqe, &watcher->ts, 0, IORING_TIMEOUT_MULTISHOT);
+   io_uring_submit(&loop->ring);
    return PGAGROAL_EVENT_RC_OK;
 }
 
@@ -593,7 +625,13 @@ ev_io_uring_periodic_stop(struct periodic_watcher* watcher)
 {
    struct io_uring_sqe* sqe;
    sqe = io_uring_get_sqe(&loop->ring);
+   if (!sqe)
+   {
+      pgagroal_log_error("Failed to get io_uring SQE for periodic stop");
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
    io_uring_prep_cancel64(sqe, (uint64_t)watcher, 0);
+   io_uring_submit(&loop->ring);
    return PGAGROAL_EVENT_RC_OK;
 }
 
@@ -721,7 +759,6 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
    event_watcher_t* watcher = io_uring_cqe_get_data(cqe);
    struct io_watcher* io;
    struct periodic_watcher* per;
-   struct message* msg = pgagroal_memory_message();
 
    /* Cancelled requests will trigger the handler, but have NULL data. */
    if (!watcher)
@@ -768,19 +805,27 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          if (cqe->res <= 0)
          {
             pgagroal_log_debug("Connection closed or error: %d", cqe->res);
-            msg->length = 0;
+            if (io->msg)
+            {
+               io->msg->length = 0;
+            }
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
          }
          else
          {
-            msg->length = cqe->res;
+            /* Update the message length with bytes received */
+            if (io->msg)
+            {
+               io->msg->length = cqe->res;
+            }
             rc = PGAGROAL_EVENT_RC_OK;
          }
          
+         /* Call the callback with the watcher (which has the message) */
          io->cb(io);
 
          /* Rearm the watcher if the event loop is still running */
-         if (pgagroal_event_loop_is_running())
+         if (pgagroal_event_loop_is_running() && rc == PGAGROAL_EVENT_RC_OK)
          {
             ev_io_uring_io_start(io);
          }

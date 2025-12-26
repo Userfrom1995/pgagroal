@@ -136,6 +136,7 @@ struct io_watcher
       int __fds[2];
    } fds;                                  /**< Set of file descriptors used for I/O */
    bool ssl;                               /**< Indicates if SSL/TLS is used on this connection. */
+   struct message* msg;                    /**< Message buffer for io_uring operations */
    void (*cb)(struct io_watcher* watcher); /**< Event callback. */
 };
 
