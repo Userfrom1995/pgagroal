@@ -449,6 +449,7 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
    return periodic_stop(watcher);
 }
 
+// ...existing code...
 int
 pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
@@ -456,65 +457,83 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #if HAVE_LINUX
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
-   int send_flags = MSG_NOSIGNAL;
-   uint64_t send_marker = (uint64_t)0xDEADBEEF00000000ULL | (uint64_t)watcher;
+   int ret;
+
+   if (unlikely(!loop))
+   {
+      return MESSAGE_STATUS_ERROR;
+   }
 
    sqe = io_uring_get_sqe(&loop->ring);
    if (!sqe)
    {
-      pgagroal_log_error("Failed to get SQE for send");
-      return -1;
+      /* If SQ is full, submit existing entries to clear space */
+      io_uring_submit(&loop->ring);
+      sqe = io_uring_get_sqe(&loop->ring);
+      if (!sqe)
+      {
+         pgagroal_log_error("io_uring: SQ ring full");
+         return MESSAGE_STATUS_ERROR;
+      }
    }
 
-   /* Mark this SQE with unique user_data to identify our send completion */
-   io_uring_sqe_set_data(sqe, (void*)send_marker);
+   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, 0);
+   io_uring_sqe_set_data(sqe, watcher);
 
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
-   
-   int ret = io_uring_submit(&loop->ring);
+   io_uring_submit(&loop->ring);
+
+   ret = io_uring_wait_cqe(&loop->ring, &cqe);
    if (ret < 0)
    {
-      pgagroal_log_error("io_uring_submit failed: %s", strerror(-ret));
-      return -1;
+      pgagroal_log_error("io_uring: wait_cqe failed: %s", strerror(-ret));
+      return MESSAGE_STATUS_ERROR;
    }
 
-   /* Wait for OUR send completion only - DON'T process other CQEs to avoid recursion */
-   while (true)
+   sent_bytes = cqe->res;
+   io_uring_cqe// filepath: src/libpgagroal/ev.c
+// ...existing code...
+int
+pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
+{
+   int sent_bytes = 0;
+#if HAVE_LINUX
+   struct io_uring_sqe* sqe = NULL;
+   struct io_uring_cqe* cqe = NULL;
+   int ret;
+
+   if (unlikely(!loop))
    {
-      ret = io_uring_wait_cqe(&loop->ring, &cqe);
-      if (ret < 0)
-      {
-         pgagroal_log_error("io_uring_wait_cqe failed: %s", strerror(-ret));
-         return -1;
-      }
+      return MESSAGE_STATUS_ERROR;
+   }
 
-      uint64_t cqe_data = (uint64_t)io_uring_cqe_get_data(cqe);
-      
-      /* Check if this is our send completion */
-      if (cqe_data == send_marker)
+   sqe = io_uring_get_sqe(&loop->ring);
+   if (!sqe)
+   {
+      /* If SQ is full, submit existing entries to clear space */
+      io_uring_submit(&loop->ring);
+      sqe = io_uring_get_sqe(&loop->ring);
+      if (!sqe)
       {
-         sent_bytes = cqe->res;
-         io_uring_cqe_seen(&loop->ring, cqe);
-         
-         if (sent_bytes < 0)
-         {
-            pgagroal_log_debug("send failed: %s", strerror(-sent_bytes));
-            return -1;
-         }
-         break;
-      }
-      else
-      {
-         /* This is NOT our send - it's a receive, accept, or timeout.
-          * Mark it as seen but DON'T process it here to avoid recursive callbacks.
-          * The main event loop will pick it up on next iteration. */
-         io_uring_cqe_seen(&loop->ring, cqe);
-         
-         /* Continue waiting for our send */
-         continue;
+         pgagroal_log_error("io_uring: SQ ring full");
+         return MESSAGE_STATUS_ERROR;
       }
    }
-#endif /* HAVE_LINUX */
+
+   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, 0);
+   io_uring_sqe_set_data(sqe, watcher);
+
+   io_uring_submit(&loop->ring);
+
+   ret = io_uring_wait_cqe(&loop->ring, &cqe);
+   if (ret < 0)
+   {
+      pgagroal_log_error("io_uring: wait_cqe failed: %s", strerror(-ret));
+      return MESSAGE_STATUS_ERROR;
+   }
+
+   sent_bytes = cqe->res;
+   io_uring_cqe_seen(&loop->ring, cqe);
+#endif
    return sent_bytes;
 }
 
