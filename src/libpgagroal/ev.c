@@ -456,17 +456,64 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 #if HAVE_LINUX
    struct io_uring_sqe* sqe = NULL;
    struct io_uring_cqe* cqe = NULL;
-   int send_flags = MSG_WAITALL | MSG_NOSIGNAL;
+   int send_flags = MSG_NOSIGNAL;
+   uint64_t send_marker = (uint64_t)0xDEADBEEF00000000ULL | (uint64_t)watcher;
 
    sqe = io_uring_get_sqe(&loop->ring);
-   io_uring_sqe_set_data(sqe, 0);
+   if (!sqe)
+   {
+      pgagroal_log_error("Failed to get SQE for send");
+      return -1;
+   }
+
+   /* Mark this SQE with unique user_data to identify our send completion */
+   io_uring_sqe_set_data(sqe, (void*)send_marker);
 
    io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
    
-   sent_bytes = cqe->res;
-   io_uring_cqe_seen(&loop->ring, cqe);
+   int ret = io_uring_submit(&loop->ring);
+   if (ret < 0)
+   {
+      pgagroal_log_error("io_uring_submit failed: %s", strerror(-ret));
+      return -1;
+   }
+
+   /* Wait for OUR send completion only - DON'T process other CQEs to avoid recursion */
+   while (true)
+   {
+      ret = io_uring_wait_cqe(&loop->ring, &cqe);
+      if (ret < 0)
+      {
+         pgagroal_log_error("io_uring_wait_cqe failed: %s", strerror(-ret));
+         return -1;
+      }
+
+      uint64_t cqe_data = (uint64_t)io_uring_cqe_get_data(cqe);
+      
+      /* Check if this is our send completion */
+      if (cqe_data == send_marker)
+      {
+         sent_bytes = cqe->res;
+         io_uring_cqe_seen(&loop->ring, cqe);
+         
+         if (sent_bytes < 0)
+         {
+            pgagroal_log_debug("send failed: %s", strerror(-sent_bytes));
+            return -1;
+         }
+         break;
+      }
+      else
+      {
+         /* This is NOT our send - it's a receive, accept, or timeout.
+          * Mark it as seen but DON'T process it here to avoid recursive callbacks.
+          * The main event loop will pick it up on next iteration. */
+         io_uring_cqe_seen(&loop->ring, cqe);
+         
+         /* Continue waiting for our send */
+         continue;
+      }
+   }
 #endif /* HAVE_LINUX */
    return sent_bytes;
 }
