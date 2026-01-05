@@ -3,3 +3,7 @@
 _site/
 build/
 vendor/
+log
+*.log
+.spec*
+*.md

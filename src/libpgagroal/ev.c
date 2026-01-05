@@ -323,7 +323,6 @@ int
 pgagroal_event_loop_destroy(void)
 {
    int rc = PGAGROAL_EVENT_RC_OK;
-   struct io_watcher* watcher;
 
    if (unlikely(!loop))
    {
@@ -332,11 +331,22 @@ pgagroal_event_loop_destroy(void)
 
    rc = loop_destroy();
 
+#if HAVE_LINUX
    for (int i = 0; i < loop->events_nr; i++)
    {
-      watcher = (struct io_watcher*)loop->events[i];
-      pgagroal_disconnect(watcher->fds.worker.snd_fd);
+      event_watcher_t* w = loop->events[i];
+
+      if (w && w->type == PGAGROAL_EVENT_TYPE_PERIODIC)
+      {
+         struct periodic_watcher* p = (struct periodic_watcher*)w;
+         if (p->fd != -1)
+         {
+            pgagroal_disconnect(p->fd);
+            p->fd = -1;
+         }
+      }
    }
+#endif
 
    free(loop);
    loop = NULL;
@@ -392,7 +402,12 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
 int
 pgagroal_io_start(struct io_watcher* watcher)
 {
-   assert(loop->events_nr + 1 < MAX_EVENTS);
+   assert(loop != NULL && watcher != NULL);
+
+   if (loop->events_nr >= MAX_EVENTS)
+   {
+      return PGAGROAL_EVENT_RC_FATAL;
+   }
 
    loop->events[loop->events_nr] = (event_watcher_t*)watcher;
    loop->events_nr++;
@@ -403,7 +418,6 @@ pgagroal_io_start(struct io_watcher* watcher)
 int
 pgagroal_io_stop(struct io_watcher* watcher)
 {
-   event_watcher_t* p;
    int i;
 
    assert(loop != NULL && watcher != NULL);
@@ -416,8 +430,16 @@ pgagroal_io_stop(struct io_watcher* watcher)
       }
    }
 
-   p = loop->events[--loop->events_nr];
-   loop->events[i] = p;
+   if (i >= loop->events_nr)
+   {
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
+
+   loop->events_nr--;
+   if (i != loop->events_nr)
+   {
+      loop->events[i] = loop->events[loop->events_nr];
+   }
 
    return io_stop(watcher);
 }
@@ -438,7 +460,12 @@ pgagroal_periodic_init(struct periodic_watcher* watcher, periodic_cb cb, int mse
 int
 pgagroal_periodic_start(struct periodic_watcher* watcher)
 {
-   assert(loop->events_nr + 1 < MAX_EVENTS);
+   assert(loop != NULL && watcher != NULL);
+
+   if (loop->events_nr >= MAX_EVENTS)
+   {
+      return PGAGROAL_EVENT_RC_FATAL;
+   }
 
    loop->events[loop->events_nr] = (event_watcher_t*)watcher;
    loop->events_nr++;
@@ -449,9 +476,10 @@ pgagroal_periodic_start(struct periodic_watcher* watcher)
 int __attribute__((unused))
 pgagroal_periodic_stop(struct periodic_watcher* watcher)
 {
-   assert(watcher != NULL && loop->events_nr + 1 < MAX_EVENTS);
-   event_watcher_t* p;
    int i;
+
+   assert(loop != NULL && watcher != NULL);
+
    for (i = 0; i < loop->events_nr; i++)
    {
       if (watcher == (struct periodic_watcher*)loop->events[i])
@@ -459,8 +487,17 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
          break;
       }
    }
-   p = loop->events[--loop->events_nr];
-   loop->events[i] = p;
+
+   if (i >= loop->events_nr)
+   {
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
+
+   loop->events_nr--;
+   if (i != loop->events_nr)
+   {
+      loop->events[i] = loop->events[loop->events_nr];
+   }
 
    return periodic_stop(watcher);
 }
@@ -468,49 +505,106 @@ pgagroal_periodic_stop(struct periodic_watcher* watcher)
 int
 pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
 {
-   int sent_bytes = 0;
+   ssize_t total_sent = 0;
+   ssize_t to_send = msg->length;
+
 #if HAVE_LINUX
-   struct io_uring_sqe* sqe = NULL;
-   struct io_uring_cqe* cqe = NULL;
-   int send_flags = 0;
-#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
-   int bid = loop->bid;
-   void* data = loop->br.buf + bid * DEFAULT_BUFFER_SIZE;
-   msg->data = data;
-#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+   struct main_configuration* config = (struct main_configuration*)shmem;
 
-   sqe = io_uring_get_sqe(&loop->ring);
-   io_uring_sqe_set_data(sqe, 0); /* data needs to be null */
+   /* Use io_uring send_ring if io_uring backend is enabled */
+   if (config->ev_backend == PGAGROAL_EVENT_BACKEND_IO_URING)
+   {
+      struct io_uring_sqe* sqe;
+      struct io_uring_cqe* cqe;
+      int ret;
 
-#if EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED
-   /* XXX: Implement zero copy send (this has been shown to speed up a little some
-    * workloads, but the implementation is still problematic). */
-   // send_flags |= MSG_WAITALL;
-   io_uring_prep_send_zc(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags, 0);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = msg->length;
-#else
-   send_flags |= MSG_WAITALL;
-   send_flags |= MSG_NOSIGNAL;
-   io_uring_prep_send(sqe, watcher->fds.worker.snd_fd, msg->data, msg->length, send_flags);
-   io_uring_submit(&loop->ring);
-   io_uring_wait_cqe(&loop->ring, &cqe);
-   sent_bytes = cqe->res;
-#endif /* EXPERIMENTAL_FEATURE_ZERO_COPY_ENABLED */
+      /*
+       * Use the dedicated send_ring for sends.
+       * This avoids CQE mixing issues where recv completions arrive on the
+       * main ring while we're waiting for a send completion. With a separate
+       * ring, we're guaranteed to only receive send CQEs here.
+       */
+      while (total_sent < to_send)
+      {
+         sqe = io_uring_get_sqe(&loop->send_ring);
+         if (!sqe)
+         {
+            pgagroal_log_error("io_uring: no SQE available for send on send_ring");
+            return -1;
+         }
 
-#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
-   io_uring_buf_ring_add(loop->br.br,
-                         data,
-                         DEFAULT_BUFFER_SIZE,
-                         bid,
-                         DEFAULT_BUFFER_SIZE,
-                         1);
-   io_uring_buf_ring_advance(loop->br.br, 1);
-#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+         io_uring_prep_send(sqe, watcher->fds.worker.snd_fd,
+                            (char*)msg->data + total_sent,
+                            to_send - total_sent,
+                            MSG_NOSIGNAL);
+         io_uring_sqe_set_data(sqe, NULL);
 
+         ret = io_uring_submit(&loop->send_ring);
+         if (ret < 0)
+         {
+            pgagroal_log_error("io_uring send submit error: %s", strerror(-ret));
+            return -1;
+         }
+
+         ret = io_uring_wait_cqe(&loop->send_ring, &cqe);
+         if (ret < 0)
+         {
+            pgagroal_log_error("io_uring send wait error: %s", strerror(-ret));
+            return -1;
+         }
+
+         if (cqe->res < 0)
+         {
+            pgagroal_log_debug("io_uring send error fd=%d: %s",
+                               watcher->fds.worker.snd_fd, strerror(-cqe->res));
+            io_uring_cqe_seen(&loop->send_ring, cqe);
+            return cqe->res;
+         }
+
+         if (cqe->res == 0)
+         {
+            /* Connection closed */
+            io_uring_cqe_seen(&loop->send_ring, cqe);
+            break;
+         }
+
+         total_sent += cqe->res;
+         io_uring_cqe_seen(&loop->send_ring, cqe);
+      }
+
+      return (int)total_sent;
+   }
 #endif /* HAVE_LINUX */
-   return sent_bytes;
+
+   /* Fallback to regular send() for non-io_uring backends */
+   while (total_sent < to_send)
+   {
+      ssize_t sent = send(watcher->fds.worker.snd_fd,
+                          (char*)msg->data + total_sent,
+                          to_send - total_sent,
+                          MSG_NOSIGNAL);
+      if (sent < 0)
+      {
+         if (errno == EINTR)
+         {
+            continue;
+         }
+         if (errno == EAGAIN || errno == EWOULDBLOCK)
+         {
+            /* Socket buffer full, retry */
+            continue;
+         }
+         pgagroal_log_debug("send error fd=%d: %s", watcher->fds.worker.snd_fd, strerror(errno));
+         return (int)sent;
+      }
+      if (sent == 0)
+      {
+         break;
+      }
+      total_sent += sent;
+   }
+
+   return (int)total_sent;
 }
 
 int
@@ -540,17 +634,42 @@ static int
 ev_io_uring_init(void)
 {
    int rc;
+   struct io_uring_params send_params = {0};
+
+   /* Initialize the main ring for receives */
    rc = io_uring_queue_init_params(ring_size, &loop->ring, &params);
    if (rc)
    {
-      pgagroal_log_fatal("io_uring_queue_init_params error: %s", strerror(-rc));
+      pgagroal_log_fatal("io_uring_queue_init_params (recv ring) error: %s", strerror(-rc));
       return rc;
    }
 
    rc = io_uring_ring_dontfork(&loop->ring);
    if (rc)
    {
-      pgagroal_log_fatal("io_uring_ring_dontfork error: %s", strerror(-rc));
+      pgagroal_log_fatal("io_uring_ring_dontfork (recv ring) error: %s", strerror(-rc));
+      io_uring_queue_exit(&loop->ring);
+      return rc;
+   }
+
+   /* Initialize a separate ring for sends to avoid CQE mixing issues.
+    * When waiting for a send CQE on a shared ring, recv CQEs may arrive first,
+    * causing either lost data, stack overflow (if processed), or state corruption.
+    * Using a separate ring guarantees we only get send CQEs when waiting for sends. */
+   rc = io_uring_queue_init_params(64, &loop->send_ring, &send_params);
+   if (rc)
+   {
+      pgagroal_log_fatal("io_uring_queue_init_params (send ring) error: %s", strerror(-rc));
+      io_uring_queue_exit(&loop->ring);
+      return rc;
+   }
+
+   rc = io_uring_ring_dontfork(&loop->send_ring);
+   if (rc)
+   {
+      pgagroal_log_fatal("io_uring_ring_dontfork (send ring) error: %s", strerror(-rc));
+      io_uring_queue_exit(&loop->ring);
+      io_uring_queue_exit(&loop->send_ring);
       return rc;
    }
 
@@ -570,6 +689,7 @@ static int
 ev_io_uring_destroy(void)
 {
    io_uring_queue_exit(&loop->ring);
+   io_uring_queue_exit(&loop->send_ring);
    return PGAGROAL_EVENT_RC_OK;
 }
 
@@ -592,7 +712,9 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          sqe->flags |= IOSQE_BUFFER_SELECT;
 #else
          msg = pgagroal_memory_message();
-         io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE, 0);
+         /* Leave 8 bytes headroom to prevent buffer overflow when parsing
+          * message headers near the end of received data */
+         io_uring_prep_recv(sqe, watcher->fds.worker.rcv_fd, msg->data, DEFAULT_BUFFER_SIZE - 8, 0);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
          break;
       default:
@@ -795,28 +917,21 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
       rc = cqe->res;
       if (rc == -ENOENT)
       {
-         /* Operation not found - normal in high-load scenarios */
-         pgagroal_log_trace("io_uring_prep_cancel: operation not found: %s", strerror(-rc));
+         pgagroal_log_trace("io_uring: cancelled operation not found");
+         return PGAGROAL_EVENT_RC_OK;
       }
-      else if (rc == -EINVAL)
+      else if (rc == -ECANCELED)
       {
-         /* Invalid operation - log but continue */
-         pgagroal_log_debug("io_uring_prep_cancel: invalid operation: %s", strerror(-rc));
-      }
-      else if (rc == -EALREADY)
-      {
-         pgagroal_log_trace("io_uring_prep_cancel: operation already in progress: %s", strerror(-rc));
+         pgagroal_log_trace("io_uring: operation cancelled");
+         return PGAGROAL_EVENT_RC_OK;
       }
       else if (rc < 0)
       {
-         /* Other errors - log but don't fatal */
-         pgagroal_log_warn("io_uring_prep_cancel error: %s", strerror(-rc));
+         pgagroal_log_debug("io_uring: CQE with NULL watcher, res=%d: %s", rc, strerror(-rc));
       }
       return PGAGROAL_EVENT_RC_OK;
    }
 
-   /* This type of thing is not ideal, ideally I should have
-    * only event_watcher_t pointers returning in cqe->user_data */
    switch (watcher->type)
    {
       case PGAGROAL_EVENT_TYPE_PERIODIC:
@@ -830,29 +945,37 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
-         if (!(cqe->res))
+         if (cqe->res <= 0)
          {
-            pgagroal_log_debug("Connection closed");
+            if (cqe->res == 0)
+            {
+               pgagroal_log_debug("io_uring: connection closed fd=%d", io->fds.worker.rcv_fd);
+            }
+            else
+            {
+               pgagroal_log_debug("io_uring: recv error fd=%d: %s", 
+                                  io->fds.worker.rcv_fd, strerror(-cqe->res));
+            }
             msg->length = 0;
             rc = PGAGROAL_EVENT_RC_CONN_CLOSED;
+            io->cb(io);
+            /* Do NOT rearm after connection close or error */
          }
          else
          {
             msg->length = cqe->res;
             rc = PGAGROAL_EVENT_RC_OK;
-         }
-         io->cb(io);
+            pgagroal_log_trace("io_uring: recv %d bytes fd=%d", cqe->res, io->fds.worker.rcv_fd);
+            io->cb(io);
 
-         /* The loop can break in the callback, check if
-          * the event loop is still running before rearming */
-         if (pgagroal_event_loop_is_running())
-         {
-            ev_io_uring_io_start(io);
+            /* Only rearm if loop is still running and connection is good */
+            if (pgagroal_event_loop_is_running())
+            {
+               ev_io_uring_io_start(io);
+            }
          }
-
          break;
       default:
-         /* reaching here is a bug, do not recover */
          pgagroal_log_fatal("BUG: Unknown event type: %d", watcher->type);
          return PGAGROAL_EVENT_RC_FATAL;
    }
@@ -1024,6 +1147,7 @@ ev_epoll_periodic_init(struct periodic_watcher* watcher, int msec)
    {
       pgagroal_log_error("timerfd_settime");
       close(watcher->fd);
+      watcher->fd = -1;
       return PGAGROAL_EVENT_RC_ERROR;
    }
    return PGAGROAL_EVENT_RC_OK;
@@ -1051,6 +1175,10 @@ ev_epoll_periodic_stop(struct periodic_watcher* watcher)
       pgagroal_log_error("epoll_ctl error: %s", strerror(errno));
       return PGAGROAL_EVENT_RC_ERROR;
    }
+
+   pgagroal_disconnect(watcher->fd);
+   watcher->fd = -1;
+
    return PGAGROAL_EVENT_RC_OK;
 }
 
