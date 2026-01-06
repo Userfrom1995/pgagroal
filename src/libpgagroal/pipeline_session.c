@@ -308,6 +308,12 @@ session_client(struct io_watcher* watcher)
          {
             if (next_client_message == 0)
             {
+               /* Bounds check: need at least 5 bytes for message header (1 byte kind + 4 bytes length) */
+               if (offset + 5 > msg->length)
+               {
+                  break;
+               }
+
                char kind = pgagroal_read_byte(msg->data + offset);
                int length = pgagroal_read_int32(msg->data + offset + 1);
 
@@ -457,6 +463,12 @@ session_server(struct io_watcher* watcher)
       {
          if (next_server_message == 0)
          {
+            /* Bounds check: need at least 5 bytes for message header (1 byte kind + 4 bytes length) */
+            if (offset + 5 > msg->length)
+            {
+               break;
+            }
+
             char kind = pgagroal_read_byte(msg->data + offset);
             int length = pgagroal_read_int32(msg->data + offset + 1);
 
