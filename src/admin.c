@@ -597,6 +597,9 @@ username:
    }
 
    /* Verify */
+#ifdef HAVE_FREEBSD
+   fseek(users_file, 0, SEEK_SET);
+#endif
    while (fgets(line, sizeof(line), users_file))
    {
       ptr = strtok(line, ":");
