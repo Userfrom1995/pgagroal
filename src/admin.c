@@ -576,6 +576,14 @@ add_user(char* users_path, char* username, char* password, bool generate_pwd, in
       goto error;
    }
 
+   /* Rewind to the beginning to read existing users.
+    * This is necessary because fopen("a+") positions the file pointer at the
+    * end on FreeBSD/macOS (POSIX-compliant behavior), but at the beginning on
+    * Linux (glibc behavior). Calling rewind() ensures consistent cross-platform
+    * behavior when checking for duplicate usernames.
+    */
+   rewind(users_file);
+
    /* User */
    if (username == NULL)
    {
