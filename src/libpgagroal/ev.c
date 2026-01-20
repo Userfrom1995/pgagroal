@@ -517,6 +517,7 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    struct io_uring_cqe* cqe = NULL;
    int send_flags = 0;
    int ret;
+   int cqe_res;
 
 #if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
    int bid = loop->bid;
@@ -573,23 +574,25 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
          return -1;
       }
 
-      if (cqe->res < 0)
+      /* Read cqe->res before calling io_uring_cqe_seen() to prevent the
+       * completion from being reused before we read the result. */
+      cqe_res = cqe->res;
+      io_uring_cqe_seen(&loop->ring_snd, cqe);
+
+      if (cqe_res < 0)
       {
          pgagroal_log_debug("io_uring send error fd=%d: %s",
-                            watcher->fds.worker.snd_fd, strerror(-cqe->res));
-         io_uring_cqe_seen(&loop->ring_snd, cqe);
-         return cqe->res;
+                            watcher->fds.worker.snd_fd, strerror(-cqe_res));
+         return cqe_res;
       }
 
-      if (cqe->res == 0)
+      if (cqe_res == 0)
       {
          /* Connection closed */
-         io_uring_cqe_seen(&loop->ring_snd, cqe);
          break;
       }
 
-      total_sent += cqe->res;
-      io_uring_cqe_seen(&loop->ring_snd, cqe);
+      total_sent += cqe_res;
    }
 
    sent_bytes = (int)total_sent;
@@ -968,7 +971,6 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          {
             msg->length = cqe->res;
             rc = PGAGROAL_EVENT_RC_OK;
-            pgagroal_log_trace("io_uring: recv %d bytes fd=%d", cqe->res, io->fds.worker.rcv_fd);
             io->cb(io);
 
             /* Only rearm if loop is still running and connection is good */
