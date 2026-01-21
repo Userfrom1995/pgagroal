@@ -43,8 +43,8 @@ extern "C" {
 #include <sys/types.h>
 #include <openssl/ssl.h>
 
-#define PGAGROAL_HOMEPAGE "https://agroal.github.io/pgagroal/"
-#define PGAGROAL_ISSUES   "https://github.com/agroal/pgagroal/issues"
+#define PGAGROAL_HOMEPAGE "https://pgagroal.github.io/"
+#define PGAGROAL_ISSUES   "https://github.com/pgagroal/pgagroal/issues"
 
 #define MAIN_UDS          ".s.pgagroal"
 #define TRANSFER_UDS      ".s.pgagroal.tu"
