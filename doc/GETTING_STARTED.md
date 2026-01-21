@@ -174,7 +174,7 @@ Commands:
                            - a server name on its own
                            - 'prometheus' to reset the Prometheus metrics
 
-pgagroal: <https://agroal.github.io/pgagroal/>
+pgagroal: <https://pgagroal.github.io/>
 Report bugs: <https://github.com/pgagroal/pgagroal/issues>
 ```
 
@@ -236,7 +236,7 @@ Commands:
                           - edit to change the password for an existing user
                           - ls   to list all available users
 
-pgagroal: https://agroal.github.io/pgagroal/
+pgagroal: https://pgagroal.github.io/
 Report bugs: https://github.com/pgagroal/pgagroal/issues
 ```
 
