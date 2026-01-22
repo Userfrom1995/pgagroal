@@ -1,14 +1,42 @@
 # Developer guide
 
-For Fedora 40
-
 ## Install PostgreSql
 
-``` sh
-dnf install postgresql-server
+For RPM based distributions such as Fedora and RHEL you can add the
+[PostgreSQL YUM repository](https://yum.postgresql.org/) and do the install via
+
+**Fedora 43**
+
+```sh
+rpm -Uvh https://download.postgresql.org/pub/repos/yum/reporpms/F-43-x86_64/pgdg-redhat-repo-latest.noarch.rpm
 ```
 
-, this will install PostgreSQL 15.
+**RHEL 10.x / Rocky Linux 10.x**
+
+**x86_64**
+
+```sh
+dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+rpm -Uvh https://download.postgresql.org/pub/repos/yum/reporpms/EL-10-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+dnf config-manager --set-enabled crb
+```
+
+**aarch64**
+
+```sh
+dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+rpm -Uvh https://download.postgresql.org/pub/repos/yum/reporpms/EL-10-aarch64/pgdg-redhat-repo-latest.noarch.rpm
+dnf config-manager --set-enabled crb
+```
+
+**PostgreSQL 18**
+
+``` sh
+dnf -qy module disable postgresql
+dnf install -y postgresql18 postgresql18-server postgresql18-contrib postgresql18-libs
+```
+
+This will install PostgreSQL 18.
 
 ## Install pgagroal
 
@@ -380,9 +408,9 @@ Based on feedback keep making changes, squashing, rebasing and force pushing
 
 ### Undo
 
-Normally you can reset to an earlier commit using `git reset <commit hash> --hard`. 
-But if you accidentally squashed two or more commits, and you want to undo that, 
-you need to know where to reset to, and the commit seems to have lost after you rebased. 
+Normally you can reset to an earlier commit using `git reset <commit hash> --hard`.
+But if you accidentally squashed two or more commits, and you want to undo that,
+you need to know where to reset to, and the commit seems to have lost after you rebased.
 
 But they are not actually lost - using `git reflog`, you can find every commit the HEAD pointer
 has ever pointed to. Find the commit you want to reset to, and do `git reset --hard`.
