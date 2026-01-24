@@ -281,15 +281,7 @@ pgagroal_worker(int client_fd, char* address, char** argv)
 
    if (client_ssl != NULL)
    {
-      int res;
-      SSL_CTX* ctx = SSL_get_SSL_CTX(client_ssl);
-      res = SSL_shutdown(client_ssl);
-      if (res == 0)
-      {
-         SSL_shutdown(client_ssl);
-      }
-      SSL_free(client_ssl);
-      SSL_CTX_free(ctx);
+      pgagroal_close_ssl(client_ssl);
    }
 
    pgagroal_log_debug("client disconnect: %d", client_fd);
@@ -297,7 +289,10 @@ pgagroal_worker(int client_fd, char* address, char** argv)
    pgagroal_disconnect(client_fd);
 
    pgagroal_prometheus_client_sockets_sub();
-   pgagroal_prometheus_query_count_specified_reset(slot);
+   if (slot != -1)
+   {
+      pgagroal_prometheus_query_count_specified_reset(slot);
+   }
 
    pgagroal_pool_status();
    pgagroal_log_debug("After client: PID %d Slot %d (%d)", getpid(), slot, exit_code);

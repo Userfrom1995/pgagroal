@@ -416,6 +416,10 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
    {
       init_watcher_message(watcher);
    }
+   else
+   {
+      watcher->msg = NULL;
+   }
 
    return PGAGROAL_EVENT_RC_OK;
 }
@@ -770,6 +774,12 @@ ev_io_uring_io_start(struct io_watcher* watcher)
    struct io_uring_sqe* sqe = io_uring_get_sqe(&loop->ring_rcv);
    struct message* msg = NULL;
 
+   if (unlikely(!sqe))
+   {
+      pgagroal_log_error("io_uring: no SQE available for recv/accept");
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
+
    io_uring_sqe_set_data(sqe, watcher);
    switch (watcher->event_watcher.type)
    {
@@ -1017,8 +1027,26 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          break;
       case PGAGROAL_EVENT_TYPE_MAIN:
          io = (struct io_watcher*)watcher;
+         if (cqe->res < 0)
+         {
+            pgagroal_log_error("io_uring: accept error: %s", strerror(-cqe->res));
+            if (pgagroal_event_loop_is_running())
+            {
+               ev_io_uring_io_start(io);
+            }
+            return PGAGROAL_EVENT_RC_OK;
+         }
          io->fds.main.client_fd = cqe->res;
          io->cb(io);
+
+         if (!(cqe->flags & IORING_CQE_F_MORE))
+         {
+            pgagroal_log_debug("io_uring: multishot accept ended: rearming");
+            if (pgagroal_event_loop_is_running())
+            {
+               ev_io_uring_io_start(io);
+            }
+         }
          break;
       case PGAGROAL_EVENT_TYPE_WORKER:
          io = (struct io_watcher*)watcher;
