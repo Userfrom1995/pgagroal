@@ -63,10 +63,10 @@ MODE="dev"
 PORT=6432
 
 # Detect container engine: Docker or Podman
-if command -v docker &> /dev/null; then
-  CONTAINER_ENGINE="sudo docker"
-elif command -v podman &> /dev/null; then
+if command -v podman &> /dev/null; then
   CONTAINER_ENGINE="podman"
+elif command -v docker &> /dev/null; then
+  CONTAINER_ENGINE="sudo docker"
 else
   echo "Neither Docker nor Podman is installed. Please install one to proceed."
   exit 1
@@ -90,7 +90,7 @@ stop_pgagroal() {
      sleep 2
    fi
    # Clean up PID files
-   sudo rm -f /tmp/pgagroal.*.pid 2>/dev/null
+   rm -f /tmp/pgagroal.*.pid 2>/dev/null || true
    echo "pgagroal stop completed"
    set -e
 }
@@ -155,18 +155,14 @@ cleanup() {
    fi
    
    # Clean up PID files
-   sudo rm -f /tmp/pgagroal.*.pid 2>/dev/null
+   rm -f /tmp/pgagroal.*.pid 2>/dev/null || true
    
    echo "pgagroal cleanup completed"
 
    echo "Clean Test Resources"
    if [[ -d $PGAGROAL_ROOT_DIR ]]; then
-      if ! sudo chown -R "$USER:$USER" "$PGAGROAL_ROOT_DIR"; then
-        echo " Could not change ownership. You might need to clean manually."
-      fi
-
       if [[ -d $BASE_DIR ]]; then
-        sudo rm -Rf "$BASE_DIR"
+        rm -Rf "$BASE_DIR"
       fi
       
       # Generate LLVM coverage reports
@@ -224,7 +220,6 @@ cleanup() {
     fi
       
       echo "Logs --> $LOG_DIR, $PG_LOG_DIR"
-      sudo chmod -R 700 "$PGAGROAL_ROOT_DIR"
    else
      echo "$PGAGROAL_ROOT_DIR not present ... ok"
    fi
@@ -262,6 +257,10 @@ cleanup_postgresql_image() {
 }
 
 start_postgresql_container() {
+  # Remove any existing container with the same name before starting
+  $CONTAINER_ENGINE stop $CONTAINER_NAME 2>/dev/null || true
+  $CONTAINER_ENGINE rm -f $CONTAINER_NAME 2>/dev/null || true
+
   $CONTAINER_ENGINE run -p $PORT:5432 -v "$PG_LOG_DIR:/pglog:z" \
   --name $CONTAINER_NAME -d \
   -e PG_DATABASE=$PG_DATABASE \
@@ -406,14 +405,16 @@ export_pgagroal_test_variables() {
 
   echo "export PGAGROAL_TEST_CONF=$CONFIGURATION_DIRECTORY/pgagroal.conf"
   export PGAGROAL_TEST_CONF=$CONFIGURATION_DIRECTORY/pgagroal.conf
+
+  echo "export PGPASSWORD=$PG_USER_PASSWORD"
+  export PGPASSWORD=$PG_USER_PASSWORD
 }
 
 unset_pgagroal_test_variables() {
   unset PGAGROAL_TEST_BASE_DIR
   unset PGAGROAL_TEST_CONF
+  unset PGPASSWORD
   unset LLVM_PROFILE_FILE
-  unset CK_RUN_CASE
-  unset CK_RUN_SUITE
   unset CC
 }
 
@@ -434,7 +435,7 @@ execute_testcases() {
    fi
 
    echo "Start running tests for $config_name"
-  $TEST_DIRECTORY/pgagroal-test $PROJECT_DIRECTORY $PG_USER_NAME $PG_DATABASE
+  $TEST_DIRECTORY/pgagroal_test $PROJECT_DIRECTORY $PG_USER_NAME $PG_DATABASE
    test_result=$?
    
    
@@ -539,7 +540,7 @@ run_tests() {
   fi
 
   echo "Preparing the pgagroal directory"
-  sudo rm -Rf "$PGAGROAL_ROOT_DIR"
+  rm -Rf "$PGAGROAL_ROOT_DIR"
   mkdir -p "$PGAGROAL_ROOT_DIR"
   # Set up LLVM coverage
   if [[ $COVERAGE == "YES" ]]; then 
@@ -559,7 +560,7 @@ run_tests() {
   else
     echo "pgbench found: $(which pgbench)"
   fi
-  sudo chmod -R 777 "$PGAGROAL_ROOT_DIR"
+  chmod -R 777 "$PGAGROAL_ROOT_DIR"
   if [[ "$1" != "ci-nonbuild" && "$1" != "run-configs-ci-nonbuild" ]]; then
    echo "Building pgagroal"
    mkdir -p "$PROJECT_DIRECTORY/build"
@@ -634,8 +635,7 @@ elif [[ $# -eq 1 ]]; then
       libssh libssh-devel \
       libatomic \
       bzip2 bzip2-devel \
-      libarchive libarchive-devel \
-      check check-devel check-static
+      libarchive libarchive-devel
     if [[ $MODE != "gcc" ]]; then
       echo "Installing LLVM coverage tools..."
       sudo dnf install -y \
@@ -651,10 +651,10 @@ elif [[ $# -eq 1 ]]; then
 
     echo "Setup complete"
   elif [[ "$1" == "clean" ]]; then
-    sudo rm -Rf $COVERAGE_DIR
+    rm -Rf $COVERAGE_DIR
     cleanup
     cleanup_postgresql_image
-    sudo rm -Rf $PGAGROAL_ROOT_DIR
+    rm -Rf $PGAGROAL_ROOT_DIR
   elif [[ "$1" == "run-configs" ]]; then
     trap cleanup EXIT SIGINT
     run_tests "run-configs"
