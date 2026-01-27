@@ -136,7 +136,7 @@ pgagroal_prometheus(SSL* client_ssl, int client_fd)
       {
          if (SSL_accept(client_ssl) <= 0)
          {
-            pgagroal_log_error("Failed to accept SSL connection");
+            pgagroal_log_debug("Failed to accept SSL connection: disconnect %d", client_fd);
             goto error;
          }
       }
@@ -163,7 +163,7 @@ pgagroal_prometheus(SSL* client_ssl, int client_fd)
             }
          }
 
-         base_url = pgagroal_format_and_append(base_url, "https://localhost:%d%s", config->common.metrics, path);
+         base_url = pgagroal_format_and_append(base_url, "https://%s:%d%s", config->common.host, config->common.metrics, path);
 
          if (redirect_page(NULL, client_fd, base_url) != MESSAGE_STATUS_OK)
          {

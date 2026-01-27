@@ -2339,13 +2339,15 @@ accept_metrics_cb(struct io_watcher* watcher)
          if (pgagroal_create_ssl_ctx(false, &ctx))
          {
             pgagroal_log_error("Could not create metrics SSL context");
-            return;
+            pgagroal_disconnect(client_fd);
+            exit(1);
          }
 
          if (pgagroal_create_ssl_server(ctx, config->common.metrics_key_file, config->common.metrics_cert_file, config->common.metrics_ca_file, client_fd, &client_ssl))
          {
             pgagroal_log_error("Could not create metrics SSL server");
-            return;
+            pgagroal_disconnect(client_fd);
+            exit(1);
          }
       }
       /* We are leaving the socket descriptor valid such that the client won't reuse it */
