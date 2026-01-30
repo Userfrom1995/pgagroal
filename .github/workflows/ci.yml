@@ -271,3 +271,7 @@ jobs:
           cd $GITHUB_WORKSPACE/build
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
           make -j$(sysctl -n hw.ncpu)
+
+  build-rpm:
+    needs: [format-check]
+    uses: ./.github/workflows/rpm-build.yml
