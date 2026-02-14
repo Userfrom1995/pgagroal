@@ -20,7 +20,7 @@ jobs:
       - name: Install clang-format
         run: |
           sudo apt update -y
-          sudo apt install -y lsb-release wget software-properties-common gnupg
+          sudo apt install -y lsb-release wget gnupg
           max_retries=5
           retry_delay=2
           tmp_key=$(mktemp)
@@ -116,7 +116,6 @@ jobs:
             pkg-config \
             lsb-release \
             wget \
-            software-properties-common \
             gnupg \
             git \
             pandoc texlive texlive-latex-extra texlive-fonts-extra texlive-xetex \
