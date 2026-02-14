@@ -67,15 +67,30 @@ jobs:
 
   build-linux:
     needs: [format-check]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
     timeout-minutes: 30
     strategy:
       matrix:
+        distro: [ubuntu-22.04, debian-bookworm, debian-trixie]
         compiler: [gcc, clang]
         build_type: [Debug, Release]
+        include:
+          - distro: ubuntu-22.04
+            image: ubuntu:22.04
+          - distro: debian-bookworm
+            image: debian:bookworm
+          - distro: debian-trixie
+            image: debian:trixie
       fail-fast: false
 
     steps:
+      - name: Prepare Container
+        run: |
+          apt-get update
+          apt-get install -y sudo
+
       - uses: actions/checkout@v6
 
       - name: Update system
@@ -98,6 +113,12 @@ jobs:
             clang \
             net-tools \
             gcovr \
+            pkg-config \
+            lsb-release \
+            wget \
+            software-properties-common \
+            gnupg \
+            git \
             pandoc texlive texlive-latex-extra texlive-fonts-extra texlive-xetex \
             texlive-luatex texlive-science texlive-extra-utils
 
@@ -108,8 +129,6 @@ jobs:
 
       - name: Install LLVM/Clang Toolchain
         run: |
-          sudo apt update -y
-          sudo apt install -y lsb-release wget software-properties-common gnupg
           # Retry logic for fetching LLVM GPG key (handles transient DNS failures)
           max_retries=5
           retry_delay=2
@@ -183,8 +202,7 @@ jobs:
           fi
 
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
-           make -j$(nproc)
-        working-directory: /home/runner/work/pgagroal/pgagroal/
+          make -j$(nproc)
 
       - name: Testsuite
         id: test
@@ -202,7 +220,7 @@ jobs:
             fi
           fi
           $(which bash) ./check.sh run-configs-ci-nonbuild
-        working-directory: /home/runner/work/pgagroal/pgagroal/build
+        working-directory: ${{ github.workspace }}/build
 
       - name: Report coverage summary
         if: matrix.compiler == 'clang' && matrix.build_type == 'Debug'
@@ -217,7 +235,7 @@ jobs:
         if: matrix.compiler == 'clang' && matrix.build_type == 'Debug'
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-reports-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: coverage-reports-${{ matrix.distro }}-${{ matrix.compiler }}-${{ matrix.build_type }}
           path: /tmp/pgagroal-test/coverage
           retention-days: 90
 
@@ -225,18 +243,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: logs-${{ matrix.compiler }}-${{ matrix.build_type }}
+          name: logs-${{ matrix.distro }}-${{ matrix.compiler }}-${{ matrix.build_type }}
           path: |
-           /home/runner/work/pgagroal/pgagroal/log
-           /tmp/pgagroal-test/*
+            ${{ github.workspace }}/log
+            /tmp/pgagroal-test/*
           retention-days: 90
 
       - name: Upload Generated Documentation Artifact
         if: matrix.compiler == 'gcc' && matrix.build_type == 'Release'
         uses: actions/upload-artifact@v5
         with:
-          name: generated-docs
-          path: /home/runner/work/pgagroal/pgagroal/build/doc
+          name: generated-docs-${{ matrix.distro }}
+          path: ${{ github.workspace }}/build/doc
           retention-days: 90
 
   build-macos:

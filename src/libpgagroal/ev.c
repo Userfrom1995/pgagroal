@@ -709,6 +709,8 @@ pgagroal_event_prep_submit_send(struct io_watcher* watcher, struct message* msg)
    io_uring_buf_ring_advance(loop->br.br, 1);
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
 #else
+   (void)watcher;
+   (void)msg;
    pgagroal_log_error("io_uring backend disabled");
    sent_bytes = -1;
 #endif /* HAVE_LINUX && HAVE_IO_URING */
