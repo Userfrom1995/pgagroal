@@ -73,10 +73,12 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        distro: [ubuntu-22.04, debian-bookworm, debian-trixie]
+        distro: [ubuntu-24.04, ubuntu-22.04, debian-bookworm, debian-trixie]
         compiler: [gcc, clang]
         build_type: [Debug, Release]
         include:
+          - distro: ubuntu-24.04
+            image: ubuntu:24.04
           - distro: ubuntu-22.04
             image: ubuntu:22.04
           - distro: debian-bookworm
@@ -100,16 +102,8 @@ jobs:
         run: |
           sudo apt install -y \
             cmake \
-            liburing-dev \
-            libsystemd-dev \
-            python3-docutils \
-            libzstd-dev \
-            liblz4-dev \
-            libbz2-dev \
-            check \
-            graphviz \
-            doxygen \
-            llvm \
+            make \
+            gcc \
             clang \
             net-tools \
             gcovr \
@@ -118,8 +112,16 @@ jobs:
             wget \
             gnupg \
             git \
-            pandoc texlive texlive-latex-extra texlive-fonts-extra texlive-xetex \
-            texlive-luatex texlive-science texlive-extra-utils
+            libssl-dev \
+            libz-dev \
+            libbz2-dev \
+            libzstd-dev \
+            liblz4-dev \
+            liburing-dev \
+            libsystemd-dev \
+            libatomic1 \
+            python3-docutils \
+            check
 
       - name: Print liburing version
         run: |
