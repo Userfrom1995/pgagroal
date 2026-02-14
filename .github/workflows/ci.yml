@@ -114,46 +114,12 @@ jobs:
 
       - name: Install LLVM/Clang Toolchain
         run: |
-          # Retry logic for fetching LLVM GPG key (handles transient DNS failures)
-          max_retries=5
-          retry_delay=2
-          tmp_key=$(mktemp)
-          success=false
-          
-          for i in $(seq 1 $max_retries); do
-            echo "Attempt $i of $max_retries to fetch LLVM GPG key..."
-            if wget --timeout=10 --tries=1 -O "$tmp_key" https://apt.llvm.org/llvm-snapshot.gpg.key 2>&1; then
-              echo "✓ Successfully fetched GPG key on attempt $i"
-              success=true
-              break
-            else
-              if [ $i -eq $max_retries ]; then
-                echo "✗ Failed after $max_retries attempts"
-                rm -f "$tmp_key"
-                exit 1
-              else
-                echo "  Attempt $i failed, retrying in ${retry_delay}s..."
-                sleep $retry_delay
-                retry_delay=$((retry_delay * 2))
-              fi
-            fi
-          done
-          
-          if [ "$success" = true ]; then
-            cat "$tmp_key" | sudo gpg --dearmor -o /usr/share/keyrings/llvm-snapshot.gpg
-            rm -f "$tmp_key"
-          fi
-          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt update -y
-          sudo apt install -y clang-21 clang-tools-21 llvm-21
+          sudo apt install -y clang llvm
           
-          # Create symlinks for the compiler
-          sudo ln -sf /usr/bin/clang-21 /usr/bin/clang
-          sudo ln -sf /usr/bin/clang++-21 /usr/bin/clang++
-          
-          # Create symlinks for coverage tools
-          sudo ln -sf /usr/bin/llvm-cov-21 /usr/bin/llvm-cov
-          sudo ln -sf /usr/bin/llvm-profdata-21 /usr/bin/llvm-profdata
+          # Create symlinks if necessary (usually not needed for system defaults)
+          # But just in case the build script expects specific names:
+          # (Updating to rely on cc/c++ via update-alternatives or standard paths)
           
       - name: Install Eisvogel template for Pandoc
         run: |
@@ -303,46 +269,8 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          # Retry logic for fetching LLVM GPG key (handles transient DNS failures)
-          max_retries=5
-          retry_delay=2
-          tmp_key=$(mktemp)
-          success=false
-          
-          for i in $(seq 1 $max_retries); do
-            echo "Attempt $i of $max_retries to fetch LLVM GPG key..."
-            if wget --timeout=10 --tries=1 -O "$tmp_key" https://apt.llvm.org/llvm-snapshot.gpg.key 2>&1; then
-              echo "✓ Successfully fetched GPG key on attempt $i"
-              success=true
-              break
-            else
-              if [ $i -eq $max_retries ]; then
-                echo "✗ Failed after $max_retries attempts"
-                rm -f "$tmp_key"
-                exit 1
-              else
-                echo "  Attempt $i failed, retrying in ${retry_delay}s..."
-                sleep $retry_delay
-                retry_delay=$((retry_delay * 2))
-              fi
-            fi
-          done
-          
-          if [ "$success" = true ]; then
-            cat "$tmp_key" | sudo gpg --dearmor -o /usr/share/keyrings/llvm-snapshot.gpg
-            rm -f "$tmp_key"
-          fi
-          echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt update -y
-          sudo apt install -y clang-21 clang-tools-21 llvm-21
-          
-          # Create symlinks for the compiler
-          sudo ln -sf /usr/bin/clang-21 /usr/bin/clang
-          sudo ln -sf /usr/bin/clang++-21 /usr/bin/clang++
-          
-          # Create symlinks for coverage tools
-          sudo ln -sf /usr/bin/llvm-cov-21 /usr/bin/llvm-cov
-          sudo ln -sf /usr/bin/llvm-profdata-21 /usr/bin/llvm-profdata
+          sudo apt install -y clang llvm
           
       - name: Install Eisvogel template for Pandoc
         run: |

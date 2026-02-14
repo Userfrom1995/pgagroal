@@ -458,7 +458,7 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       if (ret == MCTF_CODE_SKIPPED)
       {
          result->skipped = true;
-         result->error_code = mctf_errno; /* Store line number */
+         result->error_code = mctf_errno;                                  /* Store line number */
          result->error_message = mctf_errmsg ? strdup(mctf_errmsg) : NULL; /* Store skip message */
          g_runner.skipped_count++;
 
@@ -478,6 +478,12 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       {
          result->passed = true;
          g_runner.passed_count++;
+         /* If the test passed but mctf_errmsg was allocated (e.g. from an internal check that recovered), free it */
+         if (mctf_errmsg)
+         {
+            free(mctf_errmsg);
+            mctf_errmsg = NULL;
+         }
          mctf_logf("%s (%02ld:%02ld:%02ld,%03ld) [PASS]\n",
                    test->name, hours, minutes, seconds, milliseconds);
       }
