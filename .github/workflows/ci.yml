@@ -101,6 +101,11 @@ jobs:
             pandoc texlive texlive-latex-extra texlive-fonts-extra texlive-xetex \
             texlive-luatex texlive-science texlive-extra-utils
 
+      - name: Print liburing version
+        run: |
+          pkg-config --modversion liburing || true
+          apt-cache policy liburing-dev | grep Installed || true
+
       - name: Install LLVM/Clang Toolchain
         run: |
           sudo apt update -y
