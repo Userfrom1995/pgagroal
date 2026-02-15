@@ -172,6 +172,7 @@ pgagroal_tsclient_execute_pgbench(char* user, char* database, bool select_only, 
    command = pgagroal_append(command, " >> ");  // append to the file
    command = pgagroal_append(command, log_file_path);
    command = pgagroal_append(command, " 2>&1");
+   command = pgagroal_append(command, " < /dev/null");
 
    /* Prepend PGPASSWORD to command if password is available */
    if (password != NULL && strlen(password) > 0)
@@ -190,24 +191,107 @@ pgagroal_tsclient_execute_pgbench(char* user, char* database, bool select_only, 
       }
       else
       {
-         /* Fallback: try to setenv (may not work in all cases) */
-         setenv("PGPASSWORD", password, 1);
+         /* Memory allocation failed - fallback to command without password (will fail immediately due to < /dev/null) */
          ret = system(command);
       }
    }
    else
    {
-      /* No password found - pgbench will prompt (or fail if non-interactive) */
+      /* No password found - pgbench will fail immediately (due to < /dev/null) */
       ret = system(command);
    }
 
-   if (command != NULL && ret == 0)
+   free(command);
+   free(log_file_path);
+
+   return ret;
+}
+
+int
+pgagroal_tsclient_init_pgbench(char* user, char* database, int scale)
+{
+   char* command = NULL;
+   char* log_file_path = NULL;
+   struct main_configuration* config = NULL;
+   int ret = EXIT_FAILURE;
+   const char* password = NULL;
+   char* command_with_password = NULL;
+
+   config = (struct main_configuration*)shmem;
+   log_file_path = get_log_file_path();
+
+   /* Get password from environment variables */
+   /* Priority: PGPASSWORD > PG_USER_PASSWORD > PG_UTF8_USER_PASSWORD */
+   password = getenv("PGPASSWORD");
+   if (password == NULL)
    {
-      ret = EXIT_SUCCESS;
+      password = getenv("PG_USER_PASSWORD");
+   }
+   if (password == NULL)
+   {
+      password = getenv("PG_UTF8_USER_PASSWORD");
    }
 
-   free(log_file_path);
+   command = pgagroal_append(NULL, "pgbench -i ");
+
+   if (scale > 0)
+   {
+      command = pgagroal_append(command, "-s ");
+      command = pgagroal_append_int(command, scale);
+      command = pgagroal_append_char(command, ' ');
+   }
+
+   // add host details
+   command = pgagroal_append(command, "-h ");
+   command = pgagroal_append(command, config->common.host);
+   command = pgagroal_append_char(command, ' ');
+
+   command = pgagroal_append(command, "-p ");
+   command = pgagroal_append_int(command, config->common.port);
+   command = pgagroal_append_char(command, ' ');
+
+   command = pgagroal_append(command, "-U ");
+   command = pgagroal_append(command, user);
+   command = pgagroal_append_char(command, ' ');
+
+   command = pgagroal_append(command, "-d ");
+   command = pgagroal_append(command, database);
+
+   command = pgagroal_append(command, " >> "); // append to the file
+   command = pgagroal_append(command, log_file_path);
+   command = pgagroal_append(command, " 2>&1");
+   command = pgagroal_append(command, " < /dev/null");
+
+   /* Prepend PGPASSWORD to command if password is available */
+   if (password != NULL && strlen(password) > 0)
+   {
+      size_t cmd_len = strlen(command);
+      size_t pwd_len = strlen(password);
+      /* Format: "PGPASSWORD=%s %s\0" = 11 + pwd_len + 1 + cmd_len + 1 */
+      size_t total_len = 11 + pwd_len + 1 + cmd_len + 1;
+
+      command_with_password = (char*)calloc(total_len, sizeof(char));
+      if (command_with_password != NULL)
+      {
+         snprintf(command_with_password, total_len, "PGPASSWORD=%s %s", password, command);
+         ret = system(command_with_password);
+         free(command_with_password);
+      }
+      else
+      {
+         /* Memory allocation failed - fallback to command without password (will fail immediately due to < /dev/null) */
+         ret = system(command);
+      }
+   }
+   else
+   {
+      /* No password found - pgbench will fail immediately (due to < /dev/null) */
+      ret = system(command);
+   }
+
    free(command);
+   free(log_file_path);
+
    return ret;
 }
 

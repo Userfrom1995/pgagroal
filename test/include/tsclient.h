@@ -76,6 +76,16 @@ pgagroal_tsclient_destroy();
 int
 pgagroal_tsclient_execute_pgbench(char* user, char* database, bool select_only, int client_count, int thread_count, int transaction_count);
 
+/**
+ * Initialize a database using pgbench
+ * @param user name of the user
+ * @param database name of the database
+ * @param scale scale factor
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgagroal_tsclient_init_pgbench(char* user, char* database, int scale);
+
 #ifdef __cplusplus
 }
 #endif
