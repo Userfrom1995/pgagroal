@@ -455,6 +455,10 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       long seconds = total_seconds % 60;
       long milliseconds = elapsed_ms % 1000;
 
+      /* Store elapsed time so that report generators can use it */
+      /* (Older callers that don't care about timing simply ignore this field.) */
+      result->elapsed_ms = elapsed_ms;
+
       if (ret == MCTF_CODE_SKIPPED)
       {
          result->skipped = true;

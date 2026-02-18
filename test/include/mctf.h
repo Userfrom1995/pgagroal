@@ -73,6 +73,7 @@ typedef struct mctf_result
    bool skipped;
    int error_code;
    char* error_message;
+   long elapsed_ms;
 } mctf_result_t;
 
 /* Test runner state */

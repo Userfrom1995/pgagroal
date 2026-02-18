@@ -29,7 +29,8 @@
 set -eo pipefail
 
 # Variables
-ENV_PGVERSION=17
+ENV_PGVERSION="${TEST_PG_VERSION:-17}"
+export TEST_PG_VERSION="${TEST_PG_VERSION:-17}"
 IMAGE_NAME="pgagroal-test-postgresql${ENV_PGVERSION}-rocky9"
 CONTAINER_NAME="pgagroal-test-postgresql${ENV_PGVERSION}"
 
@@ -418,29 +419,83 @@ unset_pgagroal_test_variables() {
   unset CC
 }
 
+# Returns 0 if setup is already done, 1 if setup is needed.
+need_build() {
+  # Require test runner and server binary 
+  if [[ ! -f "$TEST_DIRECTORY/pgagroal_test" ]] || [[ ! -f "$EXECUTABLE_DIRECTORY/pgagroal" ]]; then
+    return 1
+  fi
+  if [[ $MODE != "ci" ]]; then
+    if ! $CONTAINER_ENGINE image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+      return 1
+    fi
+  fi
+  if [[ ! -d "$PGAGROAL_ROOT_DIR" ]] || [[ ! -f "$CONFIGURATION_DIRECTORY/pgagroal.conf" ]]; then
+    return 1
+  fi
+  return 0
+}
+
 execute_testcases() {
    local config_name="${1:-default}"
-   echo "Execute Testcases for configuration: $config_name"
+   echo "Execute MCTF Testcases"
    set +e
+   
+   if pgrep -f pgagroal >/dev/null 2>&1 || [[ -f "/tmp/pgagroal.${PGAGROAL_PORT}.pid" ]]; then
+      echo "Clean up any existing pgagroal processes"
+      if [[ -f "/tmp/pgagroal.${PGAGROAL_PORT}.pid" ]]; then
+         $EXECUTABLE_DIRECTORY/pgagroal-cli -c $CONFIGURATION_DIRECTORY/pgagroal.conf shutdown 2>/dev/null || true
+         sleep 3
+      fi
+      if pgrep -f pgagroal >/dev/null 2>&1; then
+         echo "Killing existing pgagroal processes"
+         pkill -9 -f "${EXECUTABLE_DIRECTORY}/pgagroal " || true
+         pkill -9 -f "${EXECUTABLE_DIRECTORY}/pgagroal-cli " || true
+         sleep 2
+      fi
+      rm -f "/tmp/pgagroal.${PGAGROAL_PORT}.pid"
+      
+      echo "Cleaning up shared memory segments"
+      ipcs -m 2>/dev/null | awk '/^0x0/ {print $2}' | xargs -r -I {} ipcrm -m {} 2>/dev/null || true
+      sleep 1
+   fi
+   
    echo "Starting pgagroal server in daemon mode"
    $EXECUTABLE_DIRECTORY/pgagroal -c $CONFIGURATION_DIRECTORY/pgagroal.conf -a $CONFIGURATION_DIRECTORY/pgagroal_hba.conf -u $CONFIGURATION_DIRECTORY/pgagroal_users.conf -l $CONFIGURATION_DIRECTORY/pgagroal_databases.conf -F $CONFIGURATION_DIRECTORY/pgagroal_frontend_users.conf -d
    echo "Wait for pgagroal to be ready"
    sleep 10
-   $EXECUTABLE_DIRECTORY/pgagroal-cli -c $CONFIGURATION_DIRECTORY/pgagroal.conf status details
-   if [[ $? -eq 0 ]]; then
-      echo "pgagroal server started ... ok"
-   else
-      echo "pgagroal server not started ... not ok"
-      exit 1
-   fi
+   
+   for i in {1..5}; do
+      if [[ -f "/tmp/pgagroal.${PGAGROAL_PORT}.pid" ]]; then
+         if $EXECUTABLE_DIRECTORY/pgagroal-cli -c $CONFIGURATION_DIRECTORY/pgagroal.conf status details >/dev/null 2>&1; then
+            echo "pgagroal server started ... ok"
+            break
+         fi
+      fi
+      if [[ $i -eq 5 ]]; then
+         echo "pgagroal server not started ... not ok"
+         echo "Checking logs:"
+         tail -20 $LOG_DIR/pgagroal.log 2>/dev/null || echo "Log file not found"
+         exit 1
+      fi
+      sleep 2
+   done
 
-   echo "Start running tests for $config_name"
-  $TEST_DIRECTORY/pgagroal_test $PROJECT_DIRECTORY $PG_USER_NAME $PG_DATABASE
-   test_result=$?
-   
-   
-   if [[ $test_result -ne 0 ]]; then
-      echo "Tests failed for configuration: $config_name"
+   echo "Start running MCTF tests"
+   if [[ -f "$TEST_DIRECTORY/pgagroal_test" ]]; then
+      TEST_FILTER_ARGS=()
+      if [[ -n "${TEST_FILTER:-}" ]]; then
+         TEST_FILTER_ARGS=(-t "$TEST_FILTER")
+      elif [[ -n "${MODULE_FILTER:-}" ]]; then
+         TEST_FILTER_ARGS=(-m "$MODULE_FILTER")
+      fi
+      $TEST_DIRECTORY/pgagroal_test "${TEST_FILTER_ARGS[@]}" $PROJECT_DIRECTORY $PG_USER_NAME $PG_DATABASE
+      if [[ $? -ne 0 ]]; then
+         exit 1
+      fi
+   else
+      echo "Test binary not found: $TEST_DIRECTORY/pgagroal_test"
+      echo "Please build the project first"
       exit 1
    fi
    set -e
@@ -509,8 +564,9 @@ run_multiple_config_tests() {
 }
 
 usage() {
-  echo "Usage: $0 [sub-command]"
+  echo "Usage: $0 [options] [sub-command]"
   echo "Subcommands:"
+  echo "  build                  Set up environment (image, build, PostgreSQL, pgagroal) without running tests"
   echo "  setup                  Install dependencies and build PostgreSQL image (one-time setup)"
   echo "  clean                  Clean up test suite environment and remove PostgreSQL image"
   echo "  run-configs            Run the testsuite on multiple pgagroal configurations (containerized)"
@@ -520,10 +576,21 @@ usage() {
   echo "  run-configs-ci-nonbuild Run multiple configuration tests using local PostgreSQL, skip build step"
   echo "  (no sub-command)       Default: run all tests in containerized mode"
   echo "  gcc                    Compile with gcc and no-coverage"
+  echo ""
+  echo "Options (run tests with optional filter; default is full suite):"
+  echo "  -t, --test NAME        Run only tests matching NAME"
+  echo "  -m, --module NAME      Run all tests in module NAME"
+  echo ""
+  echo "Examples:"
+  echo "  $0                      Run full test suite"
+  echo "  $0 build                Set up environment only; then run e.g. $0 -t connection"
+  echo "  $0 -t connection        Run test matching 'connection'"
+  echo "  $0 -m connection        Run all tests in module 'connection'"
   exit 1
 }
 
-run_tests() {
+do_setup() {
+  local always_build="${1:-}"
   echo "Building PostgreSQL $ENV_PGVERSION image if necessary"
   if $CONTAINER_ENGINE image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
     echo "Image $IMAGE_NAME exists, skip building"
@@ -561,7 +628,7 @@ run_tests() {
     echo "pgbench found: $(which pgbench)"
   fi
   chmod -R 777 "$PGAGROAL_ROOT_DIR"
-  if [[ "$1" != "ci-nonbuild" && "$1" != "run-configs-ci-nonbuild" ]]; then
+  if [[ "$always_build" == "force" ]] || [[ "$1" != "ci-nonbuild" && "$1" != "run-configs-ci-nonbuild" ]]; then
    echo "Building pgagroal"
    mkdir -p "$PROJECT_DIRECTORY/build"
    cd "$PROJECT_DIRECTORY/build"
@@ -610,6 +677,21 @@ run_tests() {
   echo "Initialize pgagroal"
   pgagroal_initialize_configuration
   export_pgagroal_test_variables
+}
+
+run_tests() {
+  if need_build; then
+    do_setup
+  else
+    # Double-check: binaries and config must exist (cleanup removes BASE_DIR/conf, so config can be missing)
+    if [[ ! -f "$EXECUTABLE_DIRECTORY/pgagroal" ]] || [[ ! -f "$TEST_DIRECTORY/pgagroal_test" ]] \
+       || [[ ! -f "$CONFIGURATION_DIRECTORY/pgagroal.conf" ]]; then
+      echo "Environment incomplete (binaries or config missing), running build"
+      do_setup
+    else
+      echo "Environment already ready, skipping build"
+    fi
+  fi
   if [ "$1" = "run-configs" ] || [ "$1" = "run-configs-ci" ] || [ "$1" = "run-configs-ci-nonbuild" ]; then
     run_multiple_config_tests
   else
@@ -617,10 +699,92 @@ run_tests() {
   fi
 }
 
-if [[ $# -gt 1 ]]; then
-   usage # More than one argument, show usage and exit
-elif [[ $# -eq 1 ]]; then
-  if [[ "$1" == "setup" ]]; then
+TEST_FILTER=""
+MODULE_FILTER=""
+SUBCOMMAND=""
+
+# Parse command-line options
+while [[ $# -gt 0 ]]; do
+   case "$1" in
+      -t|--test)
+         [[ -n "$MODULE_FILTER" ]] && { echo "Error: Cannot specify both -t and -m options"; usage; }
+         shift
+         [[ $# -eq 0 ]] && { echo "Error: -t/--test requires NAME"; usage; }
+         TEST_FILTER="$1"
+         shift
+         ;;
+      -m|--module)
+         [[ -n "$TEST_FILTER" ]] && { echo "Error: Cannot specify both -t and -m options"; usage; }
+         shift
+         [[ $# -eq 0 ]] && { echo "Error: -m/--module requires NAME"; usage; }
+         MODULE_FILTER="$1"
+         shift
+         ;;
+      build)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="build"
+         shift
+         ;;
+      setup)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="setup"
+         shift
+         ;;
+      clean)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="clean"
+         shift
+         ;;
+      run-configs)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="run-configs"
+         shift
+         ;;
+      ci)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="ci"
+         shift
+         ;;
+      run-configs-ci)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="run-configs-ci"
+         shift
+         ;;
+      ci-nonbuild)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="ci-nonbuild"
+         shift
+         ;;
+      run-configs-ci-nonbuild)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="run-configs-ci-nonbuild"
+         shift
+         ;;
+      gcc)
+         [[ -n "$SUBCOMMAND" ]] && usage
+         SUBCOMMAND="gcc"
+         shift
+         ;;
+      -h|--help)
+         usage
+         ;;
+      -*)
+         echo "Invalid option: $1"
+         usage
+         ;;
+      *)
+         echo "Invalid parameter: $1"
+         usage
+         ;;
+   esac
+done
+
+if [[ -n "$SUBCOMMAND" ]]; then
+  if [[ "$SUBCOMMAND" == "build" ]]; then
+    do_setup force
+    exit 0
+  fi
+  if [[ "$SUBCOMMAND" == "setup" ]]; then
     build_postgresql_image
     # Install LLVM coverage dependencies or GCC dependencies
     sudo dnf install -y \
@@ -650,44 +814,41 @@ elif [[ $# -eq 1 ]]; then
     fi
 
     echo "Setup complete"
-  elif [[ "$1" == "clean" ]]; then
+  elif [[ "$SUBCOMMAND" == "clean" ]]; then
     rm -Rf $COVERAGE_DIR
     cleanup
     cleanup_postgresql_image
     rm -Rf $PGAGROAL_ROOT_DIR
-  elif [[ "$1" == "run-configs" ]]; then
+  elif [[ "$SUBCOMMAND" == "run-configs" ]]; then
     trap cleanup EXIT SIGINT
     run_tests "run-configs"
-  elif [[ "$1" == "ci" ]]; then
+  elif [[ "$SUBCOMMAND" == "ci" ]]; then
     MODE="ci"
     PORT=5432
     trap cleanup EXIT
     run_tests
-  elif [[ "$1" == "run-configs-ci" ]]; then
+  elif [[ "$SUBCOMMAND" == "run-configs-ci" ]]; then
     MODE="ci"
     PORT=5432
     trap cleanup EXIT
     run_tests "run-configs"
-  elif [[ "$1" == "ci-nonbuild" ]]; then
+  elif [[ "$SUBCOMMAND" == "ci-nonbuild" ]]; then
     MODE="ci"
     PORT=5432
     trap cleanup EXIT
     run_tests "ci-nonbuild"
-  elif [[ "$1" == "run-configs-ci-nonbuild" ]]; then
+  elif [[ "$SUBCOMMAND" == "run-configs-ci-nonbuild" ]]; then
     MODE="ci"
     PORT=5432
     trap cleanup EXIT
     run_tests "run-configs-ci-nonbuild"
-  elif [[ "$1" == "gcc" ]]; then
+  elif [[ "$SUBCOMMAND" == "gcc" ]]; then
     MODE="gcc"
     trap cleanup EXIT SIGINT
     run_tests
-  else
-    echo "Invalid parameter: $1"
-    usage # If an invalid parameter is provided, show usage and exit
   fi
 else
-   # If no arguments are provided, run function_without_param
+   # If no subcommand is provided, run tests (full suite or with -t/-m filter)
    trap cleanup EXIT SIGINT
    run_tests
 fi
