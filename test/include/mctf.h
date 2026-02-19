@@ -322,14 +322,8 @@ mctf_format_error(const char* format, ...);
    while (0)
 
 /* Finish test macro */
-#define MCTF_FINISH()     \
-   do                     \
-   {                      \
-      mctf_errno = 0;     \
-      mctf_errmsg = NULL; \
-      return 0;           \
-   }                      \
-   while (0)
+#define MCTF_FINISH() \
+   return mctf_errno
 
 #ifdef __cplusplus
 }
