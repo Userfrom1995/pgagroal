@@ -197,7 +197,6 @@ shutdown_uds(bool remove)
    memset(&pgsql, 0, sizeof(pgsql));
    snprintf(&pgsql[0], sizeof(pgsql), ".s.PGSQL.%d", config->common.port);
 
-   pgagroal_io_stop(&io_uds.watcher);
    pgagroal_disconnect(unix_pgsql_socket);
    errno = 0;
    if (remove)
@@ -253,7 +252,6 @@ shutdown_metrics(void)
 {
    for (int i = 0; i < metrics_fds_length; i++)
    {
-      pgagroal_io_stop(&io_metrics[i].watcher);
       pgagroal_disconnect(io_metrics[i].socket);
       errno = 0;
    }
@@ -279,7 +277,6 @@ shutdown_management(bool remove __attribute__((unused)))
 {
    for (int i = 0; i < management_fds_length; i++)
    {
-      pgagroal_io_stop(&io_management[i].watcher);
       pgagroal_disconnect(io_management[i].socket);
       errno = 0;
    }
@@ -1385,11 +1382,23 @@ read_superuser_path:
       }
    }
 
+   for (int i = 0; i < management_fds_length; i++)
+   {
+      pgagroal_io_stop(&io_management[i].watcher);
+   }
    shutdown_management(true);
+
+   for (int i = 0; i < metrics_fds_length; i++)
+   {
+      pgagroal_io_stop(&io_metrics[i].watcher);
+   }
    shutdown_metrics();
+
    shutdown_mgt(true);
    shutdown_transfer(true);
    shutdown_io();
+
+   pgagroal_io_stop(&io_uds.watcher);
    shutdown_uds(true);
 
    pgagroal_event_loop_destroy();
@@ -2732,6 +2741,7 @@ reload_configuration(bool* restart)
    if (strcmp(old_host, config->common.host) || old_port != config->common.port)
    {
       shutdown_io();
+      pgagroal_io_stop(&io_uds.watcher);
       shutdown_uds(true);
 
       memset(&pgsql, 0, sizeof(pgsql));
@@ -2766,6 +2776,10 @@ reload_configuration(bool* restart)
    /* Only rebind metrics if metrics port changed */
    if (old_metrics != config->common.metrics)
    {
+      for (int i = 0; i < metrics_fds_length; i++)
+      {
+         pgagroal_io_stop(&io_metrics[i].watcher);
+      }
       shutdown_metrics();
 
       free(metrics_fds);
@@ -2794,6 +2808,10 @@ reload_configuration(bool* restart)
    /* Only rebind management if management port changed */
    if (old_management != config->management)
    {
+      for (int i = 0; i < management_fds_length; i++)
+      {
+         pgagroal_io_stop(&io_management[i].watcher);
+      }
       shutdown_management(true);
 
       free(management_fds);

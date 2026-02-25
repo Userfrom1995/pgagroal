@@ -5,10 +5,12 @@ on:
     branches:
       - master
       - 2.0.x
+      - fix_cli
   pull_request:
     branches:
       - master
       - 2.0.x
+      - fix_cli
   workflow_dispatch:
 
 jobs:
