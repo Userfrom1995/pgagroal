@@ -5,10 +5,12 @@ on:
     branches:
       - master
       - 2.0.x
+      - testing_ci_io_uring
   pull_request:
     branches:
       - master
       - 2.0.x
+      - testing_ci_io_uring
   workflow_dispatch:
 
 jobs:
@@ -67,7 +69,7 @@ jobs:
 
   build-linux:
     needs: [format-check]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     strategy:
       matrix:
@@ -80,6 +82,7 @@ jobs:
 
       - name: Update system
         run: sudo apt update
+            sudo apt install -y linux-libc-dev
 
       - name: Install Dependencies
         run: |
@@ -166,6 +169,82 @@ jobs:
         run: |
           echo "PATH=$PATH:/usr/lib/postgresql/17/bin" >> $GITHUB_ENV
           echo $PATH
+
+      - name: Check io_uring platform support
+        run: |
+          set -e
+
+          min_kernel="6.4"
+          min_liburing="2.5"
+
+          kernel_version=$(uname -r | cut -d- -f1)
+
+          if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists liburing; then
+            liburing_version=$(pkg-config --modversion liburing)
+          else
+            liburing_version=$(dpkg-query -W -f='${Version}' liburing2 2>/dev/null | cut -d- -f1 || true)
+          fi
+
+          if [ -z "$liburing_version" ]; then
+            liburing_version="unknown"
+          fi
+
+          version_ge() {
+            [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]
+          }
+
+          kernel_ok=false
+          liburing_ok=false
+
+          if version_ge "$kernel_version" "$min_kernel"; then
+            kernel_ok=true
+          fi
+
+          if [ "$liburing_version" != "unknown" ] && version_ge "$liburing_version" "$min_liburing"; then
+            liburing_ok=true
+          fi
+
+          # Current project policy from your note:
+          # io_uring is disabled only when kernel < 6.4 AND liburing < 2.5.
+          if [ "$kernel_ok" = true ] || [ "$liburing_ok" = true ]; then
+            io_uring_supported="yes"
+          else
+            io_uring_supported="no"
+          fi
+
+          io_uring_runtime_disabled="unknown"
+          if [ -r /proc/sys/kernel/io_uring_disabled ]; then
+            io_uring_runtime_disabled=$(cat /proc/sys/kernel/io_uring_disabled)
+          fi
+
+          echo "Kernel version: $kernel_version (required >= $min_kernel)"
+          echo "liburing version: $liburing_version (required >= $min_liburing)"
+          echo "Kernel threshold met: $kernel_ok"
+          echo "liburing threshold met: $liburing_ok"
+          echo "io_uring supported (policy check): $io_uring_supported"
+          echo "io_uring runtime disabled flag (/proc/sys/kernel/io_uring_disabled): $io_uring_runtime_disabled"
+
+          echo "IO_URING_SUPPORTED=$io_uring_supported" >> "$GITHUB_ENV"
+
+          {
+            echo "## io_uring Platform Check"
+            echo ""
+            echo "- Kernel version: $kernel_version (required >= $min_kernel)"
+            echo "- liburing version: $liburing_version (required >= $min_liburing)"
+            echo "- Kernel threshold met: $kernel_ok"
+            echo "- liburing threshold met: $liburing_ok"
+            echo "- io_uring supported (policy check): $io_uring_supported"
+            echo "- io_uring runtime disabled flag: $io_uring_runtime_disabled"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Debug io_uring macro
+        run: |
+         echo "Kernel:"
+         uname -r
+         echo "linux-libc-dev version:"
+         dpkg -l | grep linux-libc-dev
+         echo "Searching header:"
+         grep IORING_CQE_BUFFER_SHIFT /usr/include/linux/io_uring.h || echo "NOT FOUND"
 
       - name: Build Project
         run: |
