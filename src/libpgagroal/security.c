@@ -59,6 +59,8 @@
 #include <openssl/md5.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
+#include <openssl/params.h>
+#include <openssl/core_names.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -3843,9 +3845,23 @@ client_proof(char* password, char* salt, int salt_length, int iterations,
    unsigned char* s_k = NULL;
    int s_k_length;
    unsigned char* c_s = NULL;
-   unsigned int length;
+   size_t length;
    unsigned char* r = NULL;
-   HMAC_CTX* ctx = HMAC_CTX_new();
+   EVP_MAC_CTX* ctx = NULL;
+   EVP_MAC* mac = NULL;
+   mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+   if (mac == NULL)
+   {
+      goto error;
+   }
+   ctx = EVP_MAC_CTX_new(mac);
+   OSSL_PARAM params[2];
+   params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, "SHA256", 0);
+   params[1] = OSSL_PARAM_construct_end();
+   if (ctx == NULL)
+   {
+      goto error;
+   }
 
    if (salted_password(password, salt, salt_length, iterations, &s_p, &s_p_length))
    {
@@ -3867,37 +3883,37 @@ client_proof(char* password, char* salt, int salt_length, int iterations,
    r = calloc(1, size);
 
    /* Client signature: HMAC(StoredKey, AuthMessage) */
-   if (HMAC_Init_ex(ctx, s_k, s_k_length, EVP_sha256(), NULL) != 1)
+   if (EVP_MAC_init(ctx, (const unsigned char*)s_k, s_k_length, params) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)client_first_message_bare, client_first_message_bare_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)client_first_message_bare, client_first_message_bare_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)",", 1) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)",", 1) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)server_first_message, server_first_message_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)server_first_message, server_first_message_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)",", 1) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)",", 1) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)client_final_message_wo_proof, client_final_message_wo_proof_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)client_final_message_wo_proof, client_final_message_wo_proof_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Final(ctx, c_s, &length) != 1)
+   if (EVP_MAC_final(ctx, c_s, &length, size) != 1)
    {
       goto error;
    }
@@ -3911,8 +3927,8 @@ client_proof(char* password, char* salt, int salt_length, int iterations,
    *result = r;
    *result_length = size;
 
-   HMAC_CTX_free(ctx);
-
+   EVP_MAC_CTX_free(ctx);
+   EVP_MAC_free(mac);
    free(s_p);
    free(c_k);
    free(s_k);
@@ -3921,15 +3937,18 @@ client_proof(char* password, char* salt, int salt_length, int iterations,
    return 0;
 
 error:
-
    *result = NULL;
    *result_length = 0;
 
    if (ctx != NULL)
    {
-      HMAC_CTX_free(ctx);
+      EVP_MAC_CTX_free(ctx);
    }
-
+   if (mac != NULL)
+   {
+      EVP_MAC_free(mac);
+   }
+   free(r);
    free(s_p);
    free(c_k);
    free(s_k);
@@ -3952,8 +3971,22 @@ verify_client_proof(char* s_key, int s_key_length,
    unsigned char* s_k = NULL;
    int s_k_length;
    unsigned char* c_s = NULL;
-   unsigned int length;
-   HMAC_CTX* ctx = HMAC_CTX_new();
+   size_t length;
+   EVP_MAC_CTX* ctx = NULL;
+   EVP_MAC* mac = NULL;
+   mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+   if (mac == NULL)
+   {
+      goto error;
+   }
+   ctx = EVP_MAC_CTX_new(mac);
+   OSSL_PARAM params[2];
+   params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, "SHA256", 0);
+   params[1] = OSSL_PARAM_construct_end();
+   if (ctx == NULL)
+   {
+      goto error;
+   }
 
    c_k = calloc(1, size);
    c_k_length = size;
@@ -3961,37 +3994,37 @@ verify_client_proof(char* s_key, int s_key_length,
    c_s = calloc(1, size);
 
    /* Client signature: HMAC(StoredKey, AuthMessage) */
-   if (HMAC_Init_ex(ctx, s_key, s_key_length, EVP_sha256(), NULL) != 1)
+   if (EVP_MAC_init(ctx, (const unsigned char*)s_key, s_key_length, params) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)client_first_message_bare, client_first_message_bare_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)client_first_message_bare, client_first_message_bare_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)",", 1) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)",", 1) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)server_first_message, server_first_message_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)server_first_message, server_first_message_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)",", 1) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)",", 1) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)client_final_message_wo_proof, client_final_message_wo_proof_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)client_final_message_wo_proof, client_final_message_wo_proof_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Final(ctx, c_s, &length) != 1)
+   if (EVP_MAC_final(ctx, c_s, &length, size) != 1)
    {
       goto error;
    }
@@ -4012,7 +4045,8 @@ verify_client_proof(char* s_key, int s_key_length,
       goto error;
    }
 
-   HMAC_CTX_free(ctx);
+   EVP_MAC_CTX_free(ctx);
+   EVP_MAC_free(mac);
 
    free(c_k);
    free(s_k);
@@ -4024,9 +4058,12 @@ error:
 
    if (ctx != NULL)
    {
-      HMAC_CTX_free(ctx);
+      EVP_MAC_CTX_free(ctx);
    }
-
+   if (mac != NULL)
+   {
+      EVP_MAC_free(mac);
+   }
    free(c_k);
    free(s_k);
    free(c_s);
@@ -4042,10 +4079,19 @@ salted_password(char* password, char* salt, int salt_length, int iterations, uns
    unsigned int one;
    unsigned char Ui[size];
    unsigned char Ui_prev[size];
-   unsigned int Ui_length;
+   size_t Ui_length;
    unsigned char* r = NULL;
-   HMAC_CTX* ctx = HMAC_CTX_new();
-
+   EVP_MAC_CTX* ctx = NULL;
+   EVP_MAC* mac = NULL;
+   mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+   if (mac == NULL)
+   {
+      goto error;
+   }
+   ctx = EVP_MAC_CTX_new(mac);
+   OSSL_PARAM params[2];
+   params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, "SHA256", 0);
+   params[1] = OSSL_PARAM_construct_end();
    if (ctx == NULL)
    {
       goto error;
@@ -4065,22 +4111,22 @@ salted_password(char* password, char* salt, int salt_length, int iterations, uns
    r = calloc(1, size);
 
    /* SaltedPassword: Hi(Normalize(password), salt, iterations) */
-   if (HMAC_Init_ex(ctx, password, password_length, EVP_sha256(), NULL) != 1)
+   if (EVP_MAC_init(ctx, (const unsigned char*)password, password_length, params) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)salt, salt_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)salt, salt_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)&one, sizeof(one)) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)&one, sizeof(one)) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Final(ctx, &Ui_prev[0], &Ui_length) != 1)
+   if (EVP_MAC_final(ctx, &Ui_prev[0], &Ui_length, size) != 1)
    {
       goto error;
    }
@@ -4089,17 +4135,17 @@ salted_password(char* password, char* salt, int salt_length, int iterations, uns
    for (int i = 2; i <= iterations; i++)
    {
       /* passing nulls cause function to reuse the same key / password in the context */
-      if (HMAC_Init_ex(ctx, NULL, 0, NULL, NULL) != 1)
+      if (EVP_MAC_init(ctx, NULL, 0, NULL) != 1)
       {
          goto error;
       }
 
-      if (HMAC_Update(ctx, &Ui_prev[0], size) != 1)
+      if (EVP_MAC_update(ctx, &Ui_prev[0], size) != 1)
       {
          goto error;
       }
 
-      if (HMAC_Final(ctx, &Ui[0], &Ui_length) != 1)
+      if (EVP_MAC_final(ctx, &Ui[0], &Ui_length, size) != 1)
       {
          goto error;
       }
@@ -4114,7 +4160,8 @@ salted_password(char* password, char* salt, int salt_length, int iterations, uns
    *result = r;
    *result_length = size;
 
-   HMAC_CTX_free(ctx);
+   EVP_MAC_CTX_free(ctx);
+   EVP_MAC_free(mac);
 
    return 0;
 
@@ -4122,9 +4169,14 @@ error:
 
    if (ctx != NULL)
    {
-      HMAC_CTX_free(ctx);
+      EVP_MAC_CTX_free(ctx);
    }
 
+   if (mac != NULL)
+   {
+      EVP_MAC_free(mac);
+   }
+   free(r);
    *result = NULL;
    *result_length = 0;
 
@@ -4135,50 +4187,28 @@ static int
 salted_password_key(unsigned char* salted_password, int salted_password_length, char* key, unsigned char** result, int* result_length)
 {
    size_t size = 32;
-   unsigned char* r = NULL;
-   unsigned int length;
-   HMAC_CTX* ctx = HMAC_CTX_new();
-
-   if (ctx == NULL)
+   unsigned char* r = calloc(1, size);
+   size_t length = 0;
+   if (r == NULL)
    {
       goto error;
    }
-
-   r = calloc(1, size);
-
-   /* HMAC(SaltedPassword, Key) */
-   if (HMAC_Init_ex(ctx, salted_password, salted_password_length, EVP_sha256(), NULL) != 1)
-   {
-      goto error;
-   }
-
-   if (HMAC_Update(ctx, (unsigned char*)key, strlen(key)) != 1)
-   {
-      goto error;
-   }
-
-   if (HMAC_Final(ctx, r, &length) != 1)
+   if (EVP_Q_mac(NULL, "HMAC", NULL, "SHA256", NULL,
+                 salted_password, (size_t)salted_password_length,
+                 (unsigned char*)key, strlen(key),
+                 r, size, &length) == NULL)
    {
       goto error;
    }
 
    *result = r;
    *result_length = size;
-
-   HMAC_CTX_free(ctx);
-
    return 0;
 
 error:
-
-   if (ctx != NULL)
-   {
-      HMAC_CTX_free(ctx);
-   }
-
+   free(r);
    *result = NULL;
    *result_length = 0;
-
    return 1;
 }
 
@@ -4277,9 +4307,19 @@ server_signature(char* password, char* salt, int salt_length, int iterations,
    int s_p_length;
    unsigned char* s_k = NULL;
    int s_k_length;
-   unsigned int length;
+   size_t length;
    bool do_free = true;
-   HMAC_CTX* ctx = HMAC_CTX_new();
+   EVP_MAC_CTX* ctx = NULL;
+   EVP_MAC* mac = NULL;
+   mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+   if (mac == NULL)
+   {
+      goto error;
+   }
+   ctx = EVP_MAC_CTX_new(mac);
+   OSSL_PARAM params[2];
+   params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, "SHA256", 0);
+   params[1] = OSSL_PARAM_construct_end();
 
    if (ctx == NULL)
    {
@@ -4308,37 +4348,37 @@ server_signature(char* password, char* salt, int salt_length, int iterations,
    }
 
    /* Server signature: HMAC(ServerKey, AuthMessage) */
-   if (HMAC_Init_ex(ctx, s_k, s_k_length, EVP_sha256(), NULL) != 1)
+   if (EVP_MAC_init(ctx, s_k, s_k_length, params) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)client_first_message_bare, client_first_message_bare_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)client_first_message_bare, client_first_message_bare_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)",", 1) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)",", 1) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)server_first_message, server_first_message_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)server_first_message, server_first_message_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)",", 1) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)",", 1) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Update(ctx, (unsigned char*)client_final_message_wo_proof, client_final_message_wo_proof_length) != 1)
+   if (EVP_MAC_update(ctx, (unsigned char*)client_final_message_wo_proof, client_final_message_wo_proof_length) != 1)
    {
       goto error;
    }
 
-   if (HMAC_Final(ctx, r, &length) != 1)
+   if (EVP_MAC_final(ctx, r, &length, size) != 1)
    {
       goto error;
    }
@@ -4346,7 +4386,8 @@ server_signature(char* password, char* salt, int salt_length, int iterations,
    *result = r;
    *result_length = length;
 
-   HMAC_CTX_free(ctx);
+   EVP_MAC_CTX_free(ctx);
+   EVP_MAC_free(mac);
 
    free(s_p);
    if (do_free)
@@ -4357,13 +4398,17 @@ server_signature(char* password, char* salt, int salt_length, int iterations,
    return 0;
 
 error:
-
+   free(r);
    *result = NULL;
    *result_length = 0;
 
    if (ctx != NULL)
    {
-      HMAC_CTX_free(ctx);
+      EVP_MAC_CTX_free(ctx);
+   }
+   if (mac != NULL)
+   {
+      EVP_MAC_free(mac);
    }
 
    free(s_p);
