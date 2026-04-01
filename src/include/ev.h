@@ -147,6 +147,7 @@ struct io_watcher
       int __fds[2];
    } fds;                                  /**< Set of file descriptors used for I/O */
    bool ssl;                               /**< Indicates if SSL/TLS is used on this connection. */
+   bool stopped;                           /**< Indicates if the watcher has been stopped */
    struct message* msg;                    /**< Per-watcher message buffer to avoid global state races */
    void (*cb)(struct io_watcher* watcher); /**< Event callback. */
 };
@@ -222,6 +223,11 @@ struct event_loop
    int kqueuefd; /**< File descriptor for the kqueue instance (used with kqueue backend). */
 #endif           /* HAVE_LINUX */
    void* buffer; /**< Pointer to a buffer used to read in bytes. */
+   pid_t owner_pid;                     /**< PID of the process that owns this event loop instance. */
+   atomic_bool forked;                  /**< True in children after pgagroal_event_loop_fork() is called. */
+   int backend;                         /**< PGAGROAL_EVENT_BACKEND_* backend in use */
+   atomic_bool reload_services_pending; /**< Flag indicating a service-only reload is pending */
+   atomic_bool full_reload_pending;     /**< Flag indicating a full configuration reload is pending */
 };
 
 /**
@@ -439,6 +445,14 @@ pgagroal_wait_recv(void);
  * @param context PGAGROAL_CONTEXT_MAIN or PGAGROAL_CONTEXT_VAULT
  */
 void pgagroal_event_set_context(int context);
+
+/**
+ * @brief Restarts the IO layer safely, particularly draining and recreating io_uring rings.
+ *
+ * @return Return code
+ */
+int
+pgagroal_io_restart(void);
 
 #ifdef __cplusplus
 }

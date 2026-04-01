@@ -162,6 +162,24 @@ static int kqueue_flags; /* Flags for kqueue instance creation */
 
 static int execution_context = PGAGROAL_CONTEXT_MAIN;
 
+static bool
+event_loop_called_from_child(const char* fn)
+{
+   if (unlikely(!loop))
+   {
+      return false;
+   }
+
+   if (atomic_load(&loop->forked))
+   {
+      pgagroal_log_warn("%s ignored in forked child process (pid=%d, parent loop owner pid=%d)",
+                        fn, (int)getpid(), (int)loop->owner_pid);
+      return true;
+   }
+
+   return false;
+}
+
 void
 pgagroal_event_set_context(int context)
 {
@@ -195,6 +213,8 @@ setup_ops(void)
    {
       backend_type = DEFAULT_EVENT_BACKEND;
    }
+
+   loop->backend = backend_type;
 
 #if HAVE_LINUX
 #if HAVE_IO_URING
@@ -260,6 +280,12 @@ pgagroal_event_loop_init(void)
       pgagroal_log_fatal("calloc error: %s", strerror(errno));
       return NULL;
    }
+
+   loop->owner_pid = getpid();
+   atomic_store(&loop->forked, false);
+   atomic_store(&loop->reload_services_pending, false);
+   atomic_store(&loop->full_reload_pending, false);
+
    sigemptyset(&loop->sigset);
 
    if (!context_is_set)
@@ -337,6 +363,11 @@ pgagroal_event_loop_fork(void)
 {
    int rc;
 
+   if (loop)
+   {
+      atomic_store(&loop->forked, true);
+   }
+
    if (sigprocmask(SIG_UNBLOCK, &loop->sigset, NULL) == -1)
    {
       pgagroal_log_fatal("sigprocmask error: %s", strerror(errno));
@@ -409,12 +440,173 @@ pgagroal_event_loop_is_running(void)
    return atomic_load(&loop->running);
 }
 
+struct event_loop*
+pgagroal_event_loop_get(void)
+{
+   return loop;
+}
+
+int
+pgagroal_io_stop_all(void)
+{
+   if (!loop)
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
+   for (int i = loop->events_nr - 1; i >= 0; i--)
+   {
+      event_watcher_t* w = loop->events[i];
+      if (w)
+      {
+         switch (w->type)
+         {
+            case PGAGROAL_EVENT_TYPE_MAIN:
+            case PGAGROAL_EVENT_TYPE_WORKER:
+            {
+               pgagroal_io_stop((struct io_watcher*)w);
+               break;
+            }
+            case PGAGROAL_EVENT_TYPE_PERIODIC:
+            {
+               pgagroal_periodic_stop((struct periodic_watcher*)w);
+               break;
+            }
+            default:
+               break;
+         }
+      }
+   }
+   return PGAGROAL_EVENT_RC_OK;
+}
+
+int
+pgagroal_io_start_all(void)
+{
+   /* Note: This is a placeholder as the actual starting logic is component-specific
+    * and typically handled in main.c (start_io, start_metrics, etc.) */
+   return PGAGROAL_EVENT_RC_OK;
+}
+
+#if HAVE_IO_URING
+static int
+ev_io_uring_cancel_pending_accepts(void)
+{
+   struct io_uring_cqe* cqe;
+   struct io_uring_sqe* sqe;
+   struct __kernel_timespec ts = {.tv_sec = 0, .tv_nsec = 10 * 1000000}; /* 10ms max wait */
+   unsigned int drained = 0;
+   int ret;
+
+   if (!loop)
+   {
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
+
+   /* Cancel pending accepts on receive ring */
+   for (int i = 0; i < loop->events_nr; i++)
+   {
+      if (loop->events[i]->type == PGAGROAL_EVENT_TYPE_MAIN)
+      {
+         sqe = io_uring_get_sqe(&loop->ring_rcv);
+         if (sqe)
+         {
+            /* We use the watcher pointer as user_data for specific cancellation if supported, 
+             * or NULL to cancel everything matching. Here we cancel specifically this watcher's ops. */
+            io_uring_prep_cancel(sqe, (void*)loop->events[i], IORING_ASYNC_CANCEL_ALL);
+            io_uring_submit(&loop->ring_rcv);
+         }
+      }
+   }
+
+   /* Then drain completions with timeout */
+   while (drained < 64) /* safety cap - prevent infinite loop */
+   {
+      ret = io_uring_wait_cqe_timeout(&loop->ring_rcv, &cqe, &ts);
+      if (ret == -ETIME)
+      {
+         break; /* timeout reached, no more completions */
+      }
+      if (ret == 0)
+      {
+         /* Handle or ignore the CQE (most will be -ECANCELED or -EALREADY) */
+         if (cqe->res == -ECANCELED)
+         {
+            pgagroal_log_debug("io_uring: accept canceled successfully");
+         }
+         else if (cqe->res < 0 && cqe->res != -EALREADY)
+         {
+            pgagroal_log_debug("io_uring: accept drain result %d: %s", cqe->res, strerror(-cqe->res));
+         }
+         io_uring_cqe_seen(&loop->ring_rcv, cqe);
+         drained++;
+      }
+      else if (ret == -EINTR)
+      {
+         continue; /* signal interrupted, retry */
+      }
+      else
+      {
+         break;
+      }
+   }
+
+   pgagroal_log_debug("io_uring: drained %u completions during graceful restart", drained);
+   return 0;
+}
+#endif
+
+int
+pgagroal_io_restart(void)
+{
+   int ret = PGAGROAL_EVENT_RC_OK;
+
+   pgagroal_log_debug("pgagroal_io_restart: starting graceful restart");
+
+   if (!loop)
+   {
+      return PGAGROAL_EVENT_RC_ERROR;
+   }
+
+   pgagroal_io_stop_all();
+
+   if (loop->backend == PGAGROAL_EVENT_BACKEND_IO_URING)
+   {
+#if HAVE_IO_URING
+      ev_io_uring_cancel_pending_accepts();
+
+      /* Drain remaining CQEs */
+      struct io_uring_cqe* cqe;
+      while (io_uring_peek_cqe(&loop->ring_rcv, &cqe) == 0)
+      {
+         io_uring_cqe_seen(&loop->ring_rcv, cqe);
+      }
+
+      /* Destroy and recreate rings using original setup logic */
+      ev_io_uring_destroy();
+      
+      if (ev_io_uring_init() != PGAGROAL_EVENT_RC_OK)
+      {
+         pgagroal_log_fatal("Failed to recreate io_uring rings after reload");
+         return PGAGROAL_EVENT_RC_FATAL;
+      }
+      pgagroal_log_debug("io_uring rings recreated successfully");
+#endif
+   }
+
+   /* 3. Restart all watchers (handled by caller typically) */
+   ret = (int)pgagroal_io_start_all();
+
+   return ret;
+}
+
 int
 pgagroal_event_accept_init(struct io_watcher* watcher, int listen_fd, io_cb cb)
 {
    watcher->event_watcher.type = PGAGROAL_EVENT_TYPE_MAIN;
    watcher->fds.main.listen_fd = listen_fd;
    watcher->fds.main.client_fd = -1;
+   watcher->stopped = false;
    watcher->cb = cb;
    return PGAGROAL_EVENT_RC_OK;
 }
@@ -427,6 +619,7 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
    watcher->event_watcher.type = PGAGROAL_EVENT_TYPE_WORKER;
    watcher->fds.worker.rcv_fd = rcv_fd;
    watcher->fds.worker.snd_fd = snd_fd;
+   watcher->stopped = false;
    watcher->cb = cb;
 
    if (config->ev_backend == PGAGROAL_EVENT_BACKEND_IO_URING)
@@ -444,6 +637,11 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
 int
 pgagroal_io_start(struct io_watcher* watcher)
 {
+   if (event_loop_called_from_child("pgagroal_io_start"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    assert(loop != NULL && watcher != NULL);
    if (unlikely(loop == NULL || watcher == NULL))
    {
@@ -468,7 +666,13 @@ pgagroal_io_stop(struct io_watcher* watcher)
 {
    int i;
 
+   if (event_loop_called_from_child("pgagroal_io_stop"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    assert(loop != NULL && watcher != NULL);
+   watcher->stopped = true;
 
    for (i = 0; i < loop->events_nr; i++)
    {
@@ -518,6 +722,11 @@ pgagroal_periodic_init(struct periodic_watcher* watcher, periodic_cb cb, int mse
 int
 pgagroal_periodic_start(struct periodic_watcher* watcher)
 {
+   if (event_loop_called_from_child("pgagroal_periodic_start"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    assert(loop != NULL && watcher != NULL);
    if (unlikely(loop == NULL || watcher == NULL))
    {
@@ -541,6 +750,11 @@ int __attribute__((unused))
 pgagroal_periodic_stop(struct periodic_watcher* watcher)
 {
    int i;
+
+   if (event_loop_called_from_child("pgagroal_periodic_stop"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
 
    assert(loop != NULL && watcher != NULL);
 
@@ -934,7 +1148,7 @@ ev_io_uring_flush(void)
    struct io_uring_cqe* cqe;
    struct io_uring_sqe* sqe;
    int to_wait = 0;
-   int events = 0;
+   unsigned int events = 0;
 
 retry:
    sqe = io_uring_get_sqe(&loop->ring_rcv);
@@ -964,6 +1178,13 @@ retry:
          pgagroal_log_trace("io_uring_prep_cancel rc: %s", strerror(-rc));
       }
 #endif
+
+      if (events == UINT_MAX)
+      {
+         pgagroal_log_fatal("io_uring flush CQE counter overflow");
+         return PGAGROAL_EVENT_RC_FATAL;
+      }
+
       events++;
    }
    if (events)
@@ -981,7 +1202,7 @@ static int
 ev_io_uring_loop(void)
 {
    int rc = PGAGROAL_EVENT_RC_ERROR;
-   int events;
+   unsigned int events;
    int to_wait = 1; /* at first, wait for any 1 event */
    unsigned int head;
    struct io_uring_cqe* cqe = NULL;
@@ -1020,6 +1241,14 @@ ev_io_uring_loop(void)
             pgagroal_event_loop_break();
             break;
          }
+
+         if (events == UINT_MAX)
+         {
+            pgagroal_log_fatal("io_uring CQE counter overflow");
+            pgagroal_event_loop_break();
+            return PGAGROAL_EVENT_RC_FATAL;
+         }
+
          events++;
       }
 
@@ -1084,8 +1313,16 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          io = (struct io_watcher*)watcher;
          if (cqe->res < 0)
          {
-            pgagroal_log_error("io_uring: accept error: %s", strerror(-cqe->res));
-            if (pgagroal_event_loop_is_running())
+            if (cqe->res == -ECANCELED)
+            {
+               pgagroal_log_debug("io_uring: accept operation canceled");
+            }
+            else
+            {
+               pgagroal_log_error("io_uring: accept error: %s", strerror(-cqe->res));
+            }
+
+            if (pgagroal_event_loop_is_running() && cqe->res != -ECANCELED)
             {
                ev_io_uring_io_start(io);
             }
@@ -1097,7 +1334,7 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          if (!(cqe->flags & IORING_CQE_F_MORE))
          {
             pgagroal_log_debug("io_uring: multishot accept ended: rearming");
-            if (pgagroal_event_loop_is_running())
+            if (pgagroal_event_loop_is_running() && !io->stopped)
             {
                ev_io_uring_io_start(io);
             }
@@ -1129,7 +1366,7 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
             io->cb(io);
 
             /* Only rearm if loop is still running and connection is good */
-            if (pgagroal_event_loop_is_running())
+            if (pgagroal_event_loop_is_running() && !io->stopped)
             {
                ev_io_uring_io_start(io);
             }
@@ -1815,6 +2052,11 @@ pgagroal_signal_start(struct signal_watcher* watcher)
    struct sigaction act;
    int signum = watcher->signum;
 
+   if (event_loop_called_from_child("pgagroal_signal_start"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    if (!loop)
    {
       pgagroal_log_error("signal_start: loop is NULL");
@@ -1852,6 +2094,11 @@ pgagroal_signal_stop(struct signal_watcher* target)
 {
    int rc = PGAGROAL_EVENT_RC_OK;
    sigset_t tmp;
+
+   if (event_loop_called_from_child("pgagroal_signal_stop"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
 
 #ifdef DEBUG
    if (!target)

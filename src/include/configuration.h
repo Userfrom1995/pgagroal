@@ -128,6 +128,29 @@ extern "C" {
 #define CONFIGURATION_ARGUMENT_UPDATE_PROCESS_TITLE             "update_process_title"
 #define CONFIGURATION_ARGUMENT_PRIMARY                          "primary"
 
+/**
+ * The result of a configuration apply operation.
+ */
+typedef enum
+{
+   PGAGROAL_CONFIGURATION_OK,      /**< Configuration applied successfully */
+   PGAGROAL_CONFIGURATION_HOT,     /**< Configuration applied live, no restart needed */
+   PGAGROAL_CONFIGURATION_SERVICE, /**< Service-only reload (IO restart) requested */
+   PGAGROAL_CONFIGURATION_FULL,    /**< Full restart required */
+   PGAGROAL_CONFIGURATION_ERROR    /**< Configuration apply failed */
+} pgagroal_configuration_result_t;
+
+/**
+ * The reload level required for a configuration parameter.
+ */
+typedef enum
+{
+   RELOAD_NONE,    /**< No reload needed */
+   RELOAD_HOT,     /**< Hot reload (instant application) */
+   RELOAD_SERVICE, /**< Service-only reload (IO restart) */
+   RELOAD_FULL     /**< Full restart */
+} reload_level_t;
+
 // HBA configuration argument constants
 #define CONFIGURATION_ARGUMENT_HBA_TYPE     "type"
 #define CONFIGURATION_ARGUMENT_HBA_DATABASE "database"
@@ -587,8 +610,19 @@ pgagroal_conf_get(SSL* ssl, int client_fd, uint8_t compression, uint8_t encrypti
  *               successfully processed and applied, false if the operation failed
  *               due to validation errors, invalid keys, or system errors
  */
-void
+int
 pgagroal_conf_set(SSL* ssl, int client_fd, uint8_t compression, uint8_t encryption, struct json* payload, bool* restart_required, bool* success);
+
+/**
+ * Set a configuration parameter value (string based).
+ *
+ * @param config_key the name of the configuration parameter
+ * @param config_value the value of the configuration parameter
+ * @param restart_required output parameter to indicate if a restart is needed
+ * @return the reload result
+ */
+int
+pgagroal_conf_set_value(const char* config_key, const char* config_value, bool* restart_required);
 
 #ifdef __cplusplus
 }

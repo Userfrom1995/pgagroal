@@ -86,6 +86,7 @@ static unsigned int as_bytes(char* str, unsigned int* bytes, unsigned int defaul
 static int extract_alias_with_space(char* str, int offset, char** db_part);
 
 static bool transfer_configuration(struct main_configuration* config, struct main_configuration* reload);
+static bool reload_requires_restart(struct main_configuration* config, struct main_configuration* reload);
 static void copy_server(struct server* dst, struct server* src);
 static void copy_hba(struct hba* dst, struct hba* src);
 static void copy_user(struct user* dst, struct user* src);
@@ -134,6 +135,69 @@ static void add_limits_configuration_response(struct json* res);
 static bool is_supported_backend(ev_backend_t backend);
 static char* to_backend_str(ev_backend_t value);
 static ev_backend_t to_backend_type(char* str);
+ 
+ static reload_level_t
+ pgagroal_get_reload_level(const char* key, const char* value)
+ {
+    (void)value;
+    const char* effective_key = strrchr(key, '.');
+
+    if (effective_key != NULL)
+    {
+       effective_key++;
+    }
+    else
+    {
+       effective_key = key;
+    }
+
+    if (!strncmp(key, "limit.", 6))
+    {
+       return RELOAD_SERVICE;
+    }
+
+    static struct {
+       const char* key;
+       reload_level_t level;
+    } levels[] = {
+       {"log_level", RELOAD_HOT},
+       {"log_path", RELOAD_HOT},
+       {"log_rotation_size", RELOAD_HOT},
+       {"log_rotation_age", RELOAD_HOT},
+       {"log_line_prefix", RELOAD_HOT},
+       {"log_connections", RELOAD_HOT},
+       {"log_disconnections", RELOAD_HOT},
+       {"blocking_timeout", RELOAD_HOT},
+       {"idle_timeout", RELOAD_HOT},
+       {"validation", RELOAD_HOT},
+       {"background_interval", RELOAD_HOT},
+       {"max_retries", RELOAD_HOT},
+       {"health_check", RELOAD_HOT},
+       {"health_check_period", RELOAD_HOT},
+       {"health_check_timeout", RELOAD_HOT},
+       {"disconnect_client", RELOAD_HOT},
+       {"disconnect_client_force", RELOAD_HOT},
+       /* IO layer changes - SERVICE level */
+       {"host", RELOAD_SERVICE},
+       {"port", RELOAD_SERVICE},
+       {"unix_socket_dir", RELOAD_SERVICE},
+       {"metrics", RELOAD_SERVICE},
+       {"management", RELOAD_SERVICE},
+       {"console", RELOAD_SERVICE},
+       /* Default: FULL restart for anything else */
+       {NULL, RELOAD_FULL}
+    };
+ 
+    for (int i = 0; levels[i].key != NULL; i++)
+    {
+       if (!strcmp(levels[i].key, effective_key))
+       {
+          return levels[i].level;
+       }
+    }
+ 
+    return RELOAD_HOT;
+ }
 
 /**
  *
@@ -2484,18 +2548,27 @@ pgagroal_reload_configuration(bool* r)
       goto error;
    }
 
-   *r = transfer_configuration(config, reload);
-   // Update certificate metrics after successful reload
-   if (config->common.metrics > 0)
+   *r = reload_requires_restart(config, reload);
+   if (!*r)
    {
-      if (pgagroal_update_main_certificate_metrics(config))
+      transfer_configuration(config, reload);
+
+      // Update certificate metrics after successful reload
+      if (config->common.metrics > 0)
       {
-         pgagroal_log_warn("Failed to update certificate metrics after configuration reload");
+         if (pgagroal_update_main_certificate_metrics(config))
+         {
+            pgagroal_log_warn("Failed to update certificate metrics after configuration reload");
+         }
+         else
+         {
+            pgagroal_log_debug("Certificate metrics updated after configuration reload");
+         }
       }
-      else
-      {
-         pgagroal_log_debug("Certificate metrics updated after configuration reload");
-      }
+   }
+   else
+   {
+      pgagroal_log_warn("Reload requires restart: runtime configuration unchanged");
    }
 
    pgagroal_destroy_shared_memory((void*)reload, reload_size);
@@ -3750,13 +3823,11 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    config->track_prepared_statements = reload->track_prepared_statements;
 
    /* unix_socket_dir */
-
-   // does make sense to check for remote connections? Because in the case the Unix socket dir
-   // changes the pgagroal-cli probably will not be able to connect in any case!
-   if (restart_string("unix_socket_dir", config->unix_socket_dir, reload->unix_socket_dir, false))
+   if (strncmp(config->unix_socket_dir, reload->unix_socket_dir, MISC_LENGTH))
    {
-      changed = true;
+      pgagroal_log_info("Applying unix_socket_dir change via service reload");
    }
+   memcpy(config->unix_socket_dir, reload->unix_socket_dir, MISC_LENGTH);
 
    /* su_connection */
 
@@ -3859,6 +3930,123 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    }
 
    return changed;
+}
+
+static bool
+reload_requires_restart(struct main_configuration* config, struct main_configuration* reload)
+{
+   bool restart_required = false;
+
+   if (restart_int("metrics_cache_max_size", config->common.metrics_cache_max_size, reload->common.metrics_cache_max_size))
+   {
+      restart_required = true;
+   }
+
+   if (restart_int("pipeline", config->pipeline, reload->pipeline))
+   {
+      restart_required = true;
+   }
+
+   if (restart_int("log_type", config->common.log_type, reload->common.log_type))
+   {
+      restart_required = true;
+   }
+
+   if (restart_int("max_connections", config->max_connections, reload->max_connections))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("blocking_timeout", config->blocking_timeout, reload->blocking_timeout, false))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("idle_timeout", config->idle_timeout, reload->idle_timeout, false))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("rotate_frontend_password_timeout", config->rotate_frontend_password_timeout, reload->rotate_frontend_password_timeout, false))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("max_connection_age", config->max_connection_age, reload->max_connection_age, false))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("background_interval", config->background_interval, reload->background_interval, false))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("authentication_timeout", config->common.authentication_timeout, reload->common.authentication_timeout, false))
+   {
+      restart_required = true;
+   }
+
+   if (restart_bool("health_check", config->health_check, reload->health_check))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("health_check_period", config->health_check_period, reload->health_check_period, true))
+   {
+      restart_required = true;
+   }
+
+   if (restart_time("health_check_timeout", config->health_check_timeout, reload->health_check_timeout, true))
+   {
+      restart_required = true;
+   }
+
+   if (restart_string("health_check_user", config->health_check_user, reload->health_check_user, true))
+   {
+      restart_required = true;
+   }
+
+   if (restart_string("pidfile", config->pidfile, reload->pidfile, true))
+   {
+      restart_required = true;
+   }
+
+   if (restart_int("ev_backend", config->ev_backend, reload->ev_backend))
+   {
+      restart_required = true;
+   }
+
+   if (restart_int("hugepage", config->common.hugepage, reload->common.hugepage))
+   {
+      restart_required = true;
+   }
+
+   if (config->number_of_servers > reload->number_of_servers)
+   {
+      if (restart_int("decreasing number of servers", config->number_of_servers, reload->number_of_servers))
+      {
+         restart_required = true;
+      }
+   }
+
+   for (int i = 0; i < reload->number_of_servers; i++)
+   {
+      if (i < config->number_of_servers)
+      {
+         if (restart_server(&reload->servers[i], &config->servers[i]))
+         {
+            restart_required = true;
+         }
+      }
+   }
+
+   if (restart_limit("limits", config, reload))
+   {
+      restart_required = true;
+   }
+
+   return restart_required;
 }
 
 /**
@@ -6033,6 +6221,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    else if (key_in_section("log_level", section, key, true, &unknown))
    {
       config->common.log_level = as_logging_level(value);
+      log_file_rotate();
    }
    else if (key_in_section("log_path", section, key, true, &unknown))
    {
@@ -6042,6 +6231,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
          max = MISC_LENGTH - 1;
       }
       memcpy(config->common.log_path, value, max);
+      log_file_rotate();
    }
    else if (key_in_section("log_rotation_size", section, key, true, &unknown))
    {
@@ -6049,6 +6239,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
       {
          unknown = true;
       }
+      log_file_rotate();
    }
    else if (key_in_section("log_rotation_age", section, key, true, &unknown))
    {
@@ -6350,6 +6541,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    else if (key_in_section("log_level", section, key, true, &unknown))
    {
       config->common.log_level = as_logging_level(value);
+      log_file_rotate();
    }
    else if (key_in_section("log_path", section, key, true, &unknown))
    {
@@ -6359,6 +6551,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
          max = MISC_LENGTH - 1;
       }
       memcpy(config->common.log_path, value, max);
+      log_file_rotate();
    }
    else if (key_in_section("log_rotation_size", section, key, true, &unknown))
    {
@@ -6366,6 +6559,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
       {
          unknown = true;
       }
+      log_file_rotate();
    }
    else if (key_in_section("log_rotation_age", section, key, true, &unknown))
    {
@@ -6422,6 +6616,7 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
 {
    struct main_configuration* current_config;
    struct main_configuration* temp_config;
+   struct main_configuration* probe_config = NULL;
    size_t config_size = 0;
 
    // Initialize restart flag
@@ -6525,8 +6720,16 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
       goto error;
    }
 
-   // Check if restart is required
-   *restart_required = transfer_configuration(current_config, temp_config);
+   // Check if restart is required using a probe copy, so live config remains untouched.
+   probe_config = malloc(config_size);
+   if (probe_config == NULL)
+   {
+      goto error;
+   }
+   memcpy(probe_config, current_config, config_size);
+   *restart_required = transfer_configuration(probe_config, temp_config);
+   free(probe_config);
+   probe_config = NULL;
 
    if (*restart_required)
    {
@@ -6560,6 +6763,11 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
    return 0;
 
 error:
+   if (probe_config != NULL)
+   {
+      free(probe_config);
+   }
+
    if (temp_config != NULL)
    {
       pgagroal_destroy_shared_memory((void*)temp_config, config_size);
@@ -6982,30 +7190,28 @@ error:
    exit(1);
 }
 
-void
-pgagroal_conf_set(SSL* ssl __attribute__((unused)), int client_fd, uint8_t compression, uint8_t encryption, struct json* payload, bool* restart_required, bool* success)
+int
+pgagroal_conf_set(SSL* ssl, int client_fd, uint8_t compression, uint8_t encryption, struct json* payload, bool* restart_required, bool* success)
 {
+   (void)ssl;
    struct json* response = NULL;
    struct json* request = NULL;
    char* config_key = NULL;
    char* config_value = NULL;
+   char old_value[MISC_LENGTH];
+   char new_value[MISC_LENGTH];
+   char current_value[MISC_LENGTH];
    char* elapsed = NULL;
    time_t start_time;
    time_t end_time;
    int total_seconds;
-   char old_value[MISC_LENGTH];
-   char new_value[MISC_LENGTH];
-   struct config_key_info key_info;
+   int res;
 
    pgagroal_start_logging();
    pgagroal_memory_init();
+
    start_time = time(NULL);
 
-   // Initialize output parameters
-   *restart_required = false;
-   *success = false;
-
-   // Extract config_key and config_value from request
    request = (struct json*)pgagroal_json_get(payload, MANAGEMENT_CATEGORY_REQUEST);
    if (!request)
    {
@@ -7024,79 +7230,60 @@ pgagroal_conf_set(SSL* ssl __attribute__((unused)), int client_fd, uint8_t compr
       goto error;
    }
 
-   if (!is_valid_config_key(config_key, &key_info))
+   pgagroal_log_debug("pgagroal: Management config set %s=%s", config_key, config_value);
+
+   memset(old_value, 0, sizeof(old_value));
+   memset(new_value, 0, sizeof(new_value));
+   memset(current_value, 0, sizeof(current_value));
+
+   if (pgagroal_write_config_value(old_value, config_key, sizeof(old_value)))
    {
-      pgagroal_management_response_error(NULL, client_fd, NULL, MANAGEMENT_ERROR_CONF_SET_ERROR, compression, encryption, payload);
-      pgagroal_log_error("Conf Set: Invalid config key format: %s", config_key);
-      goto error;
+      snprintf(old_value, sizeof(old_value), "%s", "unknown");
    }
 
-   // Get old value before applying changes
-   memset(old_value, 0, MISC_LENGTH);
-   if (pgagroal_write_config_value(old_value, config_key, MISC_LENGTH))
-   {
-      snprintf(old_value, MISC_LENGTH, "<unknown>");
-   }
+   *success = false;
+   res = pgagroal_conf_set_value(config_key, config_value, restart_required);
 
-   // Apply configuration change using the enhanced function
-   if (pgagroal_apply_configuration(config_key, config_value, &key_info, restart_required))
+   if (res != PGAGROAL_CONFIGURATION_ERROR)
    {
-      // Configuration failed - send error response
+      *success = true;
+   }
+   else
+   {
       pgagroal_management_response_error(NULL, client_fd, NULL, MANAGEMENT_ERROR_CONF_SET_ERROR, compression, encryption, payload);
       pgagroal_log_error("Conf Set: Failed to apply configuration change %s=%s", config_key, config_value);
       goto error;
    }
 
-   *success = true; // Configuration succeeded
+   end_time = time(NULL);
 
-   // Configuration succeeded - create success response
-   if (pgagroal_management_create_response(payload, -1, &response))
+   pgagroal_management_create_response(payload, -1, &response);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_STATUS, (uintptr_t)(res == PGAGROAL_CONFIGURATION_FULL ? CONFIGURATION_STATUS_RESTART_REQUIRED : CONFIGURATION_STATUS_SUCCESS), ValueString);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_MESSAGE, (uintptr_t)(res == PGAGROAL_CONFIGURATION_FULL ? CONFIGURATION_MESSAGE_RESTART_REQUIRED : CONFIGURATION_MESSAGE_SUCCESS), ValueString);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_CONFIG_KEY, (uintptr_t)config_key, ValueString);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_OLD_VALUE, (uintptr_t)old_value, ValueString);
+
+   if (res == PGAGROAL_CONFIGURATION_FULL)
    {
-      pgagroal_management_response_error(NULL, client_fd, NULL, MANAGEMENT_ERROR_CONF_SET_ERROR, compression, encryption, payload);
-      pgagroal_log_error("Conf Set: Error creating json object (%d)", MANAGEMENT_ERROR_CONF_SET_ERROR);
-      goto error;
-   }
-
-   // Get new value after applying changes
-   memset(new_value, 0, MISC_LENGTH);
-   if (pgagroal_write_config_value(new_value, config_key, MISC_LENGTH))
-   {
-      snprintf(new_value, MISC_LENGTH, "<unknown>");
-   }
-
-   if (*restart_required)
-   {
-      // Case 2: Restart required
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_STATUS, (uintptr_t)CONFIGURATION_STATUS_RESTART_REQUIRED, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_MESSAGE, (uintptr_t)CONFIGURATION_MESSAGE_RESTART_REQUIRED, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_CONFIG_KEY, (uintptr_t)config_key, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_REQUESTED_VALUE, (uintptr_t)config_value, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_CURRENT_VALUE, (uintptr_t)old_value, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_RESTART_REQUIRED, (uintptr_t)true, ValueBool);
-
-      pgagroal_log_info("Conf Set: Restart required for %s=%s. Current value: %s", config_key, config_value, old_value);
+      if (pgagroal_write_config_value(current_value, config_key, sizeof(current_value)))
+      {
+         snprintf(current_value, sizeof(current_value), "%s", "unknown");
+      }
+      pgagroal_json_put(response, CONFIGURATION_RESPONSE_CURRENT_VALUE, (uintptr_t)current_value, ValueString);
    }
    else
    {
-      // Case 1: Success + No restart
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_STATUS, (uintptr_t)CONFIGURATION_STATUS_SUCCESS, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_MESSAGE, (uintptr_t)CONFIGURATION_MESSAGE_SUCCESS, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_CONFIG_KEY, (uintptr_t)config_key, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_OLD_VALUE, (uintptr_t)old_value, ValueString);
+      if (pgagroal_write_config_value(new_value, config_key, sizeof(new_value)))
+      {
+         snprintf(new_value, sizeof(new_value), "%s", config_value);
+      }
       pgagroal_json_put(response, CONFIGURATION_RESPONSE_NEW_VALUE, (uintptr_t)new_value, ValueString);
-      pgagroal_json_put(response, CONFIGURATION_RESPONSE_RESTART_REQUIRED, (uintptr_t)false, ValueBool);
-
-      pgagroal_log_info("Conf Set: Successfully applied %s: %s -> %s", config_key, old_value, new_value);
    }
 
-   end_time = time(NULL);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_REQUESTED_VALUE, (uintptr_t)config_value, ValueString);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_RESTART_REQUIRED, (uintptr_t)(res == PGAGROAL_CONFIGURATION_FULL), ValueBool);
 
-   // Send success response
-   if (pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload))
-   {
-      pgagroal_log_error("Conf Set: Error sending response");
-      goto error;
-   }
+   pgagroal_management_response_ok(NULL, client_fd, start_time, end_time, compression, encryption, payload);
 
    elapsed = pgagroal_get_timestamp_string(start_time, end_time, &total_seconds);
    pgagroal_log_info("Conf Set (Elapsed: %s)", elapsed);
@@ -7108,7 +7295,7 @@ pgagroal_conf_set(SSL* ssl __attribute__((unused)), int client_fd, uint8_t compr
    pgagroal_memory_destroy();
    pgagroal_stop_logging();
 
-   return;
+   return res;
 
 error:
    // Clean up memory on error
@@ -7121,7 +7308,7 @@ error:
    pgagroal_memory_destroy();
    pgagroal_stop_logging();
 
-   return;
+   return PGAGROAL_CONFIGURATION_ERROR;
 }
 
 static bool
@@ -7354,4 +7541,50 @@ reset_server_failures(void)
    {
       config->servers[i].failures = 0;
    }
+}
+
+int
+pgagroal_conf_set_value(const char* config_key, const char* config_value, bool* restart_required)
+{
+   struct config_key_info key_info;
+   reload_level_t level;
+   char old_value[MISC_LENGTH];
+   char new_value[MISC_LENGTH];
+   bool old_value_known = false;
+   bool new_value_known = false;
+
+   if (!is_valid_config_key(config_key, &key_info))
+   {
+      return PGAGROAL_CONFIGURATION_ERROR;
+   }
+
+   memset(old_value, 0, sizeof(old_value));
+   memset(new_value, 0, sizeof(new_value));
+   old_value_known = (pgagroal_write_config_value(old_value, (char*)config_key, sizeof(old_value)) == 0);
+
+   level = pgagroal_get_reload_level(config_key, config_value);
+
+   if (pgagroal_apply_configuration((char*)config_key, (char*)config_value, &key_info, restart_required))
+   {
+      return PGAGROAL_CONFIGURATION_ERROR;
+   }
+
+   if (*restart_required)
+   {
+      return PGAGROAL_CONFIGURATION_FULL;
+   }
+
+   new_value_known = (pgagroal_write_config_value(new_value, (char*)config_key, sizeof(new_value)) == 0);
+   if (old_value_known && new_value_known && !strcmp(old_value, new_value))
+   {
+      pgagroal_log_info("Configuration %s already has value %s - no service reload required", config_key, new_value);
+      return PGAGROAL_CONFIGURATION_HOT;
+   }
+
+   if (level == RELOAD_SERVICE)
+   {
+      return PGAGROAL_CONFIGURATION_SERVICE;
+   }
+
+   return PGAGROAL_CONFIGURATION_HOT;
 }

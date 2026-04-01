@@ -104,6 +104,38 @@ __Danger zone__
 | disconnect_client | 0 | Int | No | Disconnect clients that have been idle for more than the specified seconds. This setting __DOES NOT__ take long running transactions into account  |
 | disconnect_client_force | off | Bool | No | Disconnect clients that have been active for more than the specified seconds. This setting __DOES NOT__ take long running transactions into account  |
 
+## Reload behavior (`reload` and `conf set`)
+
+When changing settings at runtime (via `pgagroal-cli reload` or `pgagroal-cli conf set`), pgagroal applies one of three levels:
+
+- `HOT`: value is applied in-memory, no listener/socket restart
+- `SERVICE`: value is applied, then listeners/services are safely rebound/restarted
+- `FULL`: value requires manual restart (change is not applied to running instance)
+
+### Decision order
+
+The runtime decision is evaluated in this order:
+
+1. If internal transfer logic marks the change as restart-required, result is `FULL`
+2. Else, if the key is in the service-impact list, result is `SERVICE`
+3. Else, result is `HOT`
+
+This means `FULL` always has priority over `SERVICE`/`HOT`.
+
+### Why each category exists
+
+| Category | Typical options | Why this category |
+|----------|------------------|-------------------|
+| `HOT` | `log_level`, `blocking_timeout`, `idle_timeout`, `validation`, `background_interval`, `max_retries`, `disconnect_client`, `disconnect_client_force`, `health_check` | These primarily affect runtime behavior/logic and do not require rebuilding listener sockets or core process architecture. |
+| `SERVICE` | `host`, `port`, `unix_socket_dir`, `metrics`, `management`, `console`, `limit.*` | These affect where/how services listen or how pooled service limits are exposed; safe stop/unbind/rebind/restart is enough, full process restart is not needed. |
+| `FULL` | `pipeline`, `ev_backend`, `hugepage`, `log_type`, `max_connections`, `pidfile`, structural server/limit topology changes, TLS/server shape changes that transfer logic marks as restart-required | These impact core execution model, process/runtime memory sizing, backend architecture, or structural topology where partial live mutation is unsafe or inconsistent. |
+
+### Notes for reviewers/testers
+
+- `SERVICE` reload now performs full listener rebind/restart deterministically across supported backends (`io_uring`, `epoll`, `kqueue`).
+- Some options may look service-safe in isolation, but if transfer validation flags them as restart-required, they are treated as `FULL` by design.
+- The categorization is intentionally conservative for architecture-level changes and permissive for pure runtime knobs.
+
 ## Server section
 
 Each section with a name different from [**pgagroal**](https://github.com/pgagroal/pgagroal) will be treated as an host section.
