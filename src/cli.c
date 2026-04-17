@@ -1521,6 +1521,14 @@ process_set_result(SSL* ssl, int socket, char* config_key, int32_t output_format
       printf("   New value: %s\n", new_value ? new_value : "unknown");
       printf("   Status: Active (applied to running instance)\n");
    }
+   else if (conf_status && !strcmp(conf_status, CONFIGURATION_STATUS_SERVICE_RELOAD))
+   {
+      printf("Configuration change queued for service reload\n");
+      printf("   Parameter: %s\n", config_key ? config_key : "unknown");
+      printf("   Old value: %s\n", old_value ? old_value : "unknown");
+      printf("   New value: %s\n", new_value ? new_value : "unknown");
+      printf("   Status: Pending listener rebind in the running instance\n");
+   }
    else if (conf_status && !strcmp(conf_status, CONFIGURATION_STATUS_RESTART_REQUIRED))
    {
       printf("Configuration change requires manual restart\n");

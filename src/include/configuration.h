@@ -102,6 +102,10 @@ extern "C" {
 #define CONFIGURATION_ARGUMENT_STARTUP_VALIDATION               "startup_validation"
 #define CONFIGURATION_ARGUMENT_BACKGROUND_INTERVAL              "background_interval"
 #define CONFIGURATION_ARGUMENT_MAX_RETRIES                      "max_retries"
+#define CONFIGURATION_ARGUMENT_HEALTH_CHECK                     "health_check"
+#define CONFIGURATION_ARGUMENT_HEALTH_CHECK_PERIOD              "health_check_period"
+#define CONFIGURATION_ARGUMENT_HEALTH_CHECK_TIMEOUT             "health_check_timeout"
+#define CONFIGURATION_ARGUMENT_HEALTH_CHECK_USER                "health_check_user"
 #define CONFIGURATION_ARGUMENT_MAX_CONNECTIONS                  "max_connections"
 #define CONFIGURATION_ARGUMENT_ALLOW_UNKNOWN_USERS              "allow_unknown_users"
 #define CONFIGURATION_ARGUMENT_AUTHENTICATION_TIMEOUT           "authentication_timeout"
@@ -126,13 +130,14 @@ extern "C" {
 #define CONFIGURATION_ARGUMENT_TRACK_PREPARED_STATEMENTS        "track_prepared_statements"
 #define CONFIGURATION_ARGUMENT_PIDFILE                          "pidfile"
 #define CONFIGURATION_ARGUMENT_UPDATE_PROCESS_TITLE             "update_process_title"
+#define CONFIGURATION_ARGUMENT_DISCONNECT_CLIENT                "disconnect_client"
+#define CONFIGURATION_ARGUMENT_DISCONNECT_CLIENT_FORCE          "disconnect_client_force"
 #define CONFIGURATION_ARGUMENT_PRIMARY                          "primary"
 
 /**
  * The result of a configuration apply operation.
  */
-typedef enum
-{
+typedef enum {
    PGAGROAL_CONFIGURATION_OK,      /**< Configuration applied successfully */
    PGAGROAL_CONFIGURATION_HOT,     /**< Configuration applied live, no restart needed */
    PGAGROAL_CONFIGURATION_SERVICE, /**< Service-only reload (IO restart) requested */
@@ -143,8 +148,7 @@ typedef enum
 /**
  * The reload level required for a configuration parameter.
  */
-typedef enum
-{
+typedef enum {
    RELOAD_NONE,    /**< No reload needed */
    RELOAD_HOT,     /**< Hot reload (instant application) */
    RELOAD_SERVICE, /**< Service-only reload (IO restart) */
@@ -178,8 +182,10 @@ typedef enum
 #define CONFIGURATION_RESPONSE_NEW_VALUE        "new_value"
 #define CONFIGURATION_RESPONSE_RESTART_REQUIRED "restart_required"
 #define CONFIGURATION_STATUS_SUCCESS            "success"
+#define CONFIGURATION_STATUS_SERVICE_RELOAD     "success_service_reload"
 #define CONFIGURATION_STATUS_RESTART_REQUIRED   "success_restart_required"
 #define CONFIGURATION_MESSAGE_SUCCESS           "Configuration change applied successfully"
+#define CONFIGURATION_MESSAGE_SERVICE_RELOAD    "Configuration change queued for service reload"
 #define CONFIGURATION_MESSAGE_RESTART_REQUIRED  "Configuration change requires restart. Current values preserved."
 
 /**

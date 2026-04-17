@@ -457,24 +457,9 @@ pgagroal_io_stop_all(void)
    for (int i = loop->events_nr - 1; i >= 0; i--)
    {
       event_watcher_t* w = loop->events[i];
-      if (w)
+      if (w && w->type == PGAGROAL_EVENT_TYPE_MAIN)
       {
-         switch (w->type)
-         {
-            case PGAGROAL_EVENT_TYPE_MAIN:
-            case PGAGROAL_EVENT_TYPE_WORKER:
-            {
-               pgagroal_io_stop((struct io_watcher*)w);
-               break;
-            }
-            case PGAGROAL_EVENT_TYPE_PERIODIC:
-            {
-               pgagroal_periodic_stop((struct periodic_watcher*)w);
-               break;
-            }
-            default:
-               break;
-         }
+         pgagroal_io_stop((struct io_watcher*)w);
       }
    }
    return PGAGROAL_EVENT_RC_OK;
@@ -584,7 +569,7 @@ pgagroal_io_restart(void)
 
       /* Destroy and recreate rings using original setup logic */
       ev_io_uring_destroy();
-      
+
       if (ev_io_uring_init() != PGAGROAL_EVENT_RC_OK)
       {
          pgagroal_log_fatal("Failed to recreate io_uring rings after reload");

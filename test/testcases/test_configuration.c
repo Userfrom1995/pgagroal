@@ -28,6 +28,7 @@
  */
 #include <pgagroal.h>
 #include <configuration.h>
+#include <ev.h>
 #include <json.h>
 #include <tscommon.h>
 #include <mctf.h>
@@ -100,6 +101,70 @@ MCTF_TEST(test_configuration_get_returns_set_values)
    // Days
    pgagroal_test_assert_conf_set_ok(CONFIGURATION_ARGUMENT_METRICS_CACHE_MAX_AGE, "1d");
 
+   MCTF_FINISH();
+}
+
+MCTF_TEST(test_configuration_write_config_value_runtime_keys)
+{
+   struct main_configuration config;
+   void* old_shmem = shmem;
+   char buffer[MISC_LENGTH];
+   int ret;
+
+   memset(&config, 0, sizeof(struct main_configuration));
+   shmem = &config;
+
+   config.failover = true;
+   config.health_check = true;
+   config.health_check_period = PGAGROAL_TIME_SEC(15);
+   config.health_check_timeout = PGAGROAL_TIME_SEC(7);
+   memcpy(config.health_check_user, "health_user", strlen("health_user"));
+   config.disconnect_client_force = true;
+   config.ev_backend = PGAGROAL_EVENT_BACKEND_EPOLL;
+   config.tracker = true;
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_FAILOVER, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "failover should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "on", cleanup, "failover should round-trip as on");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_HEALTH_CHECK, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "health_check should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "on", cleanup, "health_check should round-trip as on");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_HEALTH_CHECK_PERIOD, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "health_check_period should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "15", cleanup, "health_check_period should round-trip as seconds");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_HEALTH_CHECK_TIMEOUT, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "health_check_timeout should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "7", cleanup, "health_check_timeout should round-trip as seconds");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_HEALTH_CHECK_USER, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "health_check_user should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "health_user", cleanup, "health_check_user should round-trip");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_DISCONNECT_CLIENT_FORCE, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "disconnect_client_force should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "on", cleanup, "disconnect_client_force should round-trip as on");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_EV_BACKEND, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "ev_backend should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "epoll", cleanup, "ev_backend should round-trip as epoll");
+
+   memset(buffer, 0, sizeof(buffer));
+   ret = pgagroal_write_config_value(buffer, CONFIGURATION_ARGUMENT_TRACKER, sizeof(buffer));
+   MCTF_ASSERT_INT_EQ(ret, 0, cleanup, "tracker should be writable");
+   MCTF_ASSERT_STR_EQ(buffer, "on", cleanup, "tracker should round-trip as on");
+
+cleanup:
+   shmem = old_shmem;
    MCTF_FINISH();
 }
 

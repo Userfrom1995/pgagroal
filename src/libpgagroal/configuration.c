@@ -135,69 +135,72 @@ static void add_limits_configuration_response(struct json* res);
 static bool is_supported_backend(ev_backend_t backend);
 static char* to_backend_str(ev_backend_t value);
 static ev_backend_t to_backend_type(char* str);
- 
- static reload_level_t
- pgagroal_get_reload_level(const char* key, const char* value)
- {
-    (void)value;
-    const char* effective_key = strrchr(key, '.');
 
-    if (effective_key != NULL)
-    {
-       effective_key++;
-    }
-    else
-    {
-       effective_key = key;
-    }
+static reload_level_t
+pgagroal_get_reload_level(const char* key, const char* value)
+{
+   (void)value;
+   const char* effective_key = strrchr(key, '.');
 
-    if (!strncmp(key, "limit.", 6))
-    {
-       return RELOAD_SERVICE;
-    }
+   if (effective_key != NULL)
+   {
+      effective_key++;
+   }
+   else
+   {
+      effective_key = key;
+   }
 
-    static struct {
-       const char* key;
-       reload_level_t level;
-    } levels[] = {
-       {"log_level", RELOAD_HOT},
-       {"log_path", RELOAD_HOT},
-       {"log_rotation_size", RELOAD_HOT},
-       {"log_rotation_age", RELOAD_HOT},
-       {"log_line_prefix", RELOAD_HOT},
-       {"log_connections", RELOAD_HOT},
-       {"log_disconnections", RELOAD_HOT},
-       {"blocking_timeout", RELOAD_HOT},
-       {"idle_timeout", RELOAD_HOT},
-       {"validation", RELOAD_HOT},
-       {"background_interval", RELOAD_HOT},
-       {"max_retries", RELOAD_HOT},
-       {"health_check", RELOAD_HOT},
-       {"health_check_period", RELOAD_HOT},
-       {"health_check_timeout", RELOAD_HOT},
-       {"disconnect_client", RELOAD_HOT},
-       {"disconnect_client_force", RELOAD_HOT},
-       /* IO layer changes - SERVICE level */
-       {"host", RELOAD_SERVICE},
-       {"port", RELOAD_SERVICE},
-       {"unix_socket_dir", RELOAD_SERVICE},
-       {"metrics", RELOAD_SERVICE},
-       {"management", RELOAD_SERVICE},
-       {"console", RELOAD_SERVICE},
-       /* Default: FULL restart for anything else */
-       {NULL, RELOAD_FULL}
-    };
- 
-    for (int i = 0; levels[i].key != NULL; i++)
-    {
-       if (!strcmp(levels[i].key, effective_key))
-       {
-          return levels[i].level;
-       }
-    }
- 
-    return RELOAD_HOT;
- }
+   if (!strncmp(key, "limit.", 6))
+   {
+      return RELOAD_SERVICE;
+   }
+
+   static struct
+   {
+      const char* key;
+      reload_level_t level;
+   } levels[] = {
+      {"log_level", RELOAD_HOT},
+      {"log_path", RELOAD_HOT},
+      {"log_rotation_size", RELOAD_HOT},
+      {"log_rotation_age", RELOAD_HOT},
+      {"log_line_prefix", RELOAD_HOT},
+      {"log_connections", RELOAD_HOT},
+      {"log_disconnections", RELOAD_HOT},
+      {"blocking_timeout", RELOAD_HOT},
+      {"idle_timeout", RELOAD_HOT},
+      {"validation", RELOAD_HOT},
+      {"background_interval", RELOAD_HOT},
+      {"max_retries", RELOAD_HOT},
+      {"health_check", RELOAD_HOT},
+      {"health_check_period", RELOAD_HOT},
+      {"health_check_timeout", RELOAD_HOT},
+      {"disconnect_client", RELOAD_HOT},
+      {"disconnect_client_force", RELOAD_HOT},
+      /* Listener changes handled through service reload */
+      {"host", RELOAD_SERVICE},
+      {"port", RELOAD_SERVICE},
+      {"metrics", RELOAD_SERVICE},
+      {"management", RELOAD_SERVICE},
+      {"console", RELOAD_SERVICE},
+      {"nodelay", RELOAD_SERVICE},
+      {"backlog", RELOAD_SERVICE},
+      /* Socket path rebinding needs old-path cleanup, keep it conservative */
+      {"unix_socket_dir", RELOAD_FULL},
+      /* Default: FULL restart for anything else */
+      {NULL, RELOAD_FULL}};
+
+   for (int i = 0; levels[i].key != NULL; i++)
+   {
+      if (!strcmp(levels[i].key, effective_key))
+      {
+         return levels[i].level;
+      }
+   }
+
+   return RELOAD_HOT;
+}
 
 /**
  *
@@ -4012,6 +4015,11 @@ reload_requires_restart(struct main_configuration* config, struct main_configura
       restart_required = true;
    }
 
+   if (restart_string("unix_socket_dir", config->unix_socket_dir, reload->unix_socket_dir, false))
+   {
+      restart_required = true;
+   }
+
    if (restart_int("ev_backend", config->ev_backend, reload->ev_backend))
    {
       restart_required = true;
@@ -5020,6 +5028,10 @@ pgagroal_write_config_value(char* buffer, char* config_key, size_t buffer_size)
       {
          return to_pipeline(buffer, config->pipeline);
       }
+      else if (!strncmp(key, "failover", MISC_LENGTH))
+      {
+         return to_bool(buffer, config->failover);
+      }
       else if (!strncmp(key, "failover_script", MISC_LENGTH))
       {
          return to_string(buffer, config->failover_script, buffer_size);
@@ -5100,6 +5112,22 @@ pgagroal_write_config_value(char* buffer, char* config_key, size_t buffer_size)
       {
          return to_int(buffer, config->max_retries);
       }
+      else if (!strncmp(key, "health_check", MISC_LENGTH))
+      {
+         return to_bool(buffer, config->health_check);
+      }
+      else if (!strncmp(key, "health_check_period", MISC_LENGTH))
+      {
+         return to_int(buffer, (int)pgagroal_time_convert(config->health_check_period, FORMAT_TIME_S));
+      }
+      else if (!strncmp(key, "health_check_timeout", MISC_LENGTH))
+      {
+         return to_int(buffer, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S));
+      }
+      else if (!strncmp(key, "health_check_user", MISC_LENGTH))
+      {
+         return to_string(buffer, config->health_check_user, buffer_size);
+      }
       else if (!strncmp(key, "authentication_timeout", MISC_LENGTH))
       {
          return to_int(buffer, (int)pgagroal_time_convert(config->common.authentication_timeout, FORMAT_TIME_S));
@@ -5107,6 +5135,10 @@ pgagroal_write_config_value(char* buffer, char* config_key, size_t buffer_size)
       else if (!strncmp(key, "disconnect_client", MISC_LENGTH))
       {
          return to_int(buffer, config->disconnect_client);
+      }
+      else if (!strncmp(key, "disconnect_client_force", MISC_LENGTH))
+      {
+         return to_bool(buffer, config->disconnect_client_force);
       }
       else if (!strncmp(key, "pidfile", MISC_LENGTH))
       {
@@ -5139,6 +5171,14 @@ pgagroal_write_config_value(char* buffer, char* config_key, size_t buffer_size)
       else if (!strncmp(key, "hugepage", MISC_LENGTH))
       {
          return to_hugepage(buffer, config->common.hugepage);
+      }
+      else if (!strncmp(key, "ev_backend", MISC_LENGTH))
+      {
+         return to_string(buffer, to_backend_str(config->ev_backend), buffer_size);
+      }
+      else if (!strncmp(key, "tracker", MISC_LENGTH))
+      {
+         return to_bool(buffer, config->tracker);
       }
       else if (!strncmp(key, "track_prepared_statements", MISC_LENGTH))
       {
@@ -6616,7 +6656,6 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
 {
    struct main_configuration* current_config;
    struct main_configuration* temp_config;
-   struct main_configuration* probe_config = NULL;
    size_t config_size = 0;
 
    // Initialize restart flag
@@ -6720,16 +6759,7 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
       goto error;
    }
 
-   // Check if restart is required using a probe copy, so live config remains untouched.
-   probe_config = malloc(config_size);
-   if (probe_config == NULL)
-   {
-      goto error;
-   }
-   memcpy(probe_config, current_config, config_size);
-   *restart_required = transfer_configuration(probe_config, temp_config);
-   free(probe_config);
-   probe_config = NULL;
+   *restart_required = reload_requires_restart(current_config, temp_config);
 
    if (*restart_required)
    {
@@ -6763,11 +6793,6 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
    return 0;
 
 error:
-   if (probe_config != NULL)
-   {
-      free(probe_config);
-   }
-
    if (temp_config != NULL)
    {
       pgagroal_destroy_shared_memory((void*)temp_config, config_size);
@@ -6947,6 +6972,10 @@ add_configuration_response(struct json* res)
    pgagroal_json_put_enum_value(res, CONFIGURATION_ARGUMENT_STARTUP_VALIDATION, config->startup_validation, to_startup_validation);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_BACKGROUND_INTERVAL, (uintptr_t)pgagroal_time_convert(config->background_interval, FORMAT_TIME_S), ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_MAX_RETRIES, (uintptr_t)config->max_retries, ValueInt64);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK, (uintptr_t)config->health_check, ValueBool);
+   pgagroal_json_put_time_value(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK_PERIOD, config->health_check_period, FORMAT_TIME_S);
+   pgagroal_json_put_time_value(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK_TIMEOUT, config->health_check_timeout, FORMAT_TIME_S);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK_USER, (uintptr_t)config->health_check_user, ValueString);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_MAX_CONNECTIONS, (uintptr_t)config->max_connections, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_ALLOW_UNKNOWN_USERS, (uintptr_t)config->allow_unknown_users, ValueBool);
    pgagroal_json_put_time_value(res, CONFIGURATION_ARGUMENT_AUTHENTICATION_TIMEOUT, config->common.authentication_timeout, FORMAT_TIME_S);
@@ -6969,6 +6998,8 @@ add_configuration_response(struct json* res)
    pgagroal_json_put_enum_value(res, CONFIGURATION_ARGUMENT_HUGEPAGE, config->common.hugepage, to_hugepage);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_TRACKER, (uintptr_t)config->tracker, ValueBool);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_TRACK_PREPARED_STATEMENTS, (uintptr_t)config->track_prepared_statements, ValueBool);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_DISCONNECT_CLIENT, (uintptr_t)config->disconnect_client, ValueInt64);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_DISCONNECT_CLIENT_FORCE, (uintptr_t)config->disconnect_client_force, ValueBool);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_PIDFILE, (uintptr_t)config->pidfile, ValueString);
    pgagroal_json_put_enum_value(res, CONFIGURATION_ARGUMENT_UPDATE_PROCESS_TITLE, config->update_process_title, to_update_process_title);
 }
@@ -7196,6 +7227,8 @@ pgagroal_conf_set(SSL* ssl, int client_fd, uint8_t compression, uint8_t encrypti
    (void)ssl;
    struct json* response = NULL;
    struct json* request = NULL;
+   const char* status = CONFIGURATION_STATUS_SUCCESS;
+   const char* message = CONFIGURATION_MESSAGE_SUCCESS;
    char* config_key = NULL;
    char* config_value = NULL;
    char old_value[MISC_LENGTH];
@@ -7258,8 +7291,20 @@ pgagroal_conf_set(SSL* ssl, int client_fd, uint8_t compression, uint8_t encrypti
    end_time = time(NULL);
 
    pgagroal_management_create_response(payload, -1, &response);
-   pgagroal_json_put(response, CONFIGURATION_RESPONSE_STATUS, (uintptr_t)(res == PGAGROAL_CONFIGURATION_FULL ? CONFIGURATION_STATUS_RESTART_REQUIRED : CONFIGURATION_STATUS_SUCCESS), ValueString);
-   pgagroal_json_put(response, CONFIGURATION_RESPONSE_MESSAGE, (uintptr_t)(res == PGAGROAL_CONFIGURATION_FULL ? CONFIGURATION_MESSAGE_RESTART_REQUIRED : CONFIGURATION_MESSAGE_SUCCESS), ValueString);
+
+   if (res == PGAGROAL_CONFIGURATION_SERVICE)
+   {
+      status = CONFIGURATION_STATUS_SERVICE_RELOAD;
+      message = CONFIGURATION_MESSAGE_SERVICE_RELOAD;
+   }
+   else if (res == PGAGROAL_CONFIGURATION_FULL)
+   {
+      status = CONFIGURATION_STATUS_RESTART_REQUIRED;
+      message = CONFIGURATION_MESSAGE_RESTART_REQUIRED;
+   }
+
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_STATUS, (uintptr_t)status, ValueString);
+   pgagroal_json_put(response, CONFIGURATION_RESPONSE_MESSAGE, (uintptr_t)message, ValueString);
    pgagroal_json_put(response, CONFIGURATION_RESPONSE_CONFIG_KEY, (uintptr_t)config_key, ValueString);
    pgagroal_json_put(response, CONFIGURATION_RESPONSE_OLD_VALUE, (uintptr_t)old_value, ValueString);
 
