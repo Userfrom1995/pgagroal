@@ -220,8 +220,10 @@ struct event_loop
    int epollfd; /**< File descriptor for the epoll instance (used with epoll backend). */
 #else
    int kqueuefd; /**< File descriptor for the kqueue instance (used with kqueue backend). */
-#endif           /* HAVE_LINUX */
-   void* buffer; /**< Pointer to a buffer used to read in bytes. */
+#endif                 /* HAVE_LINUX */
+   void* buffer;       /**< Pointer to a buffer used to read in bytes. */
+   pid_t owner_pid;    /**< PID of the process that owns this event loop instance. */
+   atomic_bool forked; /**< True in children after pgagroal_event_loop_fork() is called. */
 };
 
 /**

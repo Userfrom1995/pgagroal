@@ -43,7 +43,6 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdatomic.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -162,6 +161,24 @@ static int kqueue_flags; /* Flags for kqueue instance creation */
 
 static int execution_context = PGAGROAL_CONTEXT_MAIN;
 
+static bool
+event_loop_called_from_child(const char* fn)
+{
+   if (unlikely(!loop))
+   {
+      return false;
+   }
+
+   if (atomic_load(&loop->forked))
+   {
+      pgagroal_log_warn("%s ignored in forked child process (pid=%d, parent loop owner pid=%d)",
+                        fn, (int)getpid(), (int)loop->owner_pid);
+      return true;
+   }
+
+   return false;
+}
+
 void
 pgagroal_event_set_context(int context)
 {
@@ -260,6 +277,11 @@ pgagroal_event_loop_init(void)
       pgagroal_log_fatal("calloc error: %s", strerror(errno));
       return NULL;
    }
+
+   loop->owner_pid = getpid();
+   atomic_init(&loop->running, false);
+   atomic_init(&loop->forked, false);
+
    sigemptyset(&loop->sigset);
 
    if (!context_is_set)
@@ -336,6 +358,11 @@ int
 pgagroal_event_loop_fork(void)
 {
    int rc;
+
+   if (loop)
+   {
+      atomic_store(&loop->forked, true);
+   }
 
    if (sigprocmask(SIG_UNBLOCK, &loop->sigset, NULL) == -1)
    {
@@ -444,6 +471,11 @@ pgagroal_event_worker_init(struct io_watcher* watcher, int rcv_fd, int snd_fd, i
 int
 pgagroal_io_start(struct io_watcher* watcher)
 {
+   if (event_loop_called_from_child("pgagroal_io_start"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    assert(loop != NULL && watcher != NULL);
    if (unlikely(loop == NULL || watcher == NULL))
    {
@@ -467,6 +499,11 @@ int
 pgagroal_io_stop(struct io_watcher* watcher)
 {
    int i;
+
+   if (event_loop_called_from_child("pgagroal_io_stop"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
 
    assert(loop != NULL && watcher != NULL);
 
@@ -518,6 +555,11 @@ pgagroal_periodic_init(struct periodic_watcher* watcher, periodic_cb cb, int mse
 int
 pgagroal_periodic_start(struct periodic_watcher* watcher)
 {
+   if (event_loop_called_from_child("pgagroal_periodic_start"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    assert(loop != NULL && watcher != NULL);
    if (unlikely(loop == NULL || watcher == NULL))
    {
@@ -541,6 +583,11 @@ int __attribute__((unused))
 pgagroal_periodic_stop(struct periodic_watcher* watcher)
 {
    int i;
+
+   if (event_loop_called_from_child("pgagroal_periodic_stop"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
 
    assert(loop != NULL && watcher != NULL);
 
@@ -934,7 +981,7 @@ ev_io_uring_flush(void)
    struct io_uring_cqe* cqe;
    struct io_uring_sqe* sqe;
    int to_wait = 0;
-   int events = 0;
+   unsigned int events = 0;
 
 retry:
    sqe = io_uring_get_sqe(&loop->ring_rcv);
@@ -964,6 +1011,7 @@ retry:
          pgagroal_log_trace("io_uring_prep_cancel rc: %s", strerror(-rc));
       }
 #endif
+
       events++;
    }
    if (events)
@@ -981,7 +1029,7 @@ static int
 ev_io_uring_loop(void)
 {
    int rc = PGAGROAL_EVENT_RC_ERROR;
-   int events;
+   unsigned int events;
    int to_wait = 1; /* at first, wait for any 1 event */
    unsigned int head;
    struct io_uring_cqe* cqe = NULL;
@@ -1084,8 +1132,16 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
          io = (struct io_watcher*)watcher;
          if (cqe->res < 0)
          {
-            pgagroal_log_error("io_uring: accept error: %s", strerror(-cqe->res));
-            if (pgagroal_event_loop_is_running())
+            if (cqe->res == -ECANCELED)
+            {
+               pgagroal_log_debug("io_uring: accept operation canceled");
+            }
+            else
+            {
+               pgagroal_log_error("io_uring: accept error: %s", strerror(-cqe->res));
+            }
+
+            if (pgagroal_event_loop_is_running() && cqe->res != -ECANCELED)
             {
                ev_io_uring_io_start(io);
             }
@@ -1815,6 +1871,11 @@ pgagroal_signal_start(struct signal_watcher* watcher)
    struct sigaction act;
    int signum = watcher->signum;
 
+   if (event_loop_called_from_child("pgagroal_signal_start"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
+
    if (!loop)
    {
       pgagroal_log_error("signal_start: loop is NULL");
@@ -1852,6 +1913,11 @@ pgagroal_signal_stop(struct signal_watcher* target)
 {
    int rc = PGAGROAL_EVENT_RC_OK;
    sigset_t tmp;
+
+   if (event_loop_called_from_child("pgagroal_signal_stop"))
+   {
+      return PGAGROAL_EVENT_RC_OK;
+   }
 
 #ifdef DEBUG
    if (!target)
