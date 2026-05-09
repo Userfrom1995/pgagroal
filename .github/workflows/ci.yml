@@ -5,10 +5,12 @@ on:
     branches:
       - master
       - 2.0.x
+      - clean_up
   pull_request:
     branches:
       - master
       - 2.0.x
+      - clean_up
   workflow_dispatch:
 
 jobs:

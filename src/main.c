@@ -97,8 +97,10 @@ static void frontend_user_password_startup(struct main_configuration* config);
 static bool accept_fatal(int error);
 static void add_client(pid_t pid);
 static void remove_client(pid_t pid);
+static void refresh_periodic_watchers(void);
+static void start_periodic_watcher(struct periodic_watcher* watcher, bool* started, periodic_cb cb, int interval);
+static void stop_periodic_watcher(struct periodic_watcher* watcher, bool* started);
 static bool reload_configuration(bool* restart);
-static bool reload_services_only(void);
 static void reload_set_configuration(SSL* ssl, int client_fd, uint8_t compression, uint8_t encryption, struct json* payload);
 static void create_pidfile_or_exit(void);
 static void remove_pidfile(void);
@@ -129,6 +131,16 @@ static struct pipeline main_pipeline;
 static int known_fds[MAX_NUMBER_OF_CONNECTIONS];
 static struct client* clients = NULL;
 static struct accept_io io_transfer;
+static struct periodic_watcher idle_timeout_watcher;
+static struct periodic_watcher max_connection_age_watcher;
+static struct periodic_watcher validation_watcher;
+static struct periodic_watcher disconnect_client_watcher;
+static struct periodic_watcher rotate_frontend_password_watcher;
+static bool idle_timeout_started = false;
+static bool max_connection_age_started = false;
+static bool validation_started = false;
+static bool disconnect_client_started = false;
+static bool rotate_frontend_password_started = false;
 
 static void
 start_mgt(void)
@@ -387,11 +399,6 @@ main(int argc, char** argv)
    bool has_main_sockets = false;
    void* tmp_shmem = NULL;
    struct signal_info signal_watcher[SIGNALS_NUMBER];
-   struct periodic_watcher idle_timeout;
-   struct periodic_watcher max_connection_age;
-   struct periodic_watcher validation;
-   struct periodic_watcher disconnect_client;
-   struct periodic_watcher rotate_frontend_password;
    struct rlimit flimit;
    size_t shmem_size;
    size_t pipeline_shmem_size = 0;
@@ -1268,40 +1275,7 @@ read_superuser_path:
       goto error;
    }
 
-   if (pgagroal_time_is_valid(config->idle_timeout))
-   {
-      pgagroal_periodic_init(&idle_timeout, idle_timeout_cb,
-                             1000 * MAX(1. * pgagroal_time_convert(config->idle_timeout, FORMAT_TIME_S) / 2., 5.));
-      pgagroal_periodic_start(&idle_timeout);
-   }
-
-   if (pgagroal_time_is_valid(config->max_connection_age))
-   {
-      pgagroal_periodic_init(&max_connection_age, max_connection_age_cb,
-                             1000 * MAX(1. * pgagroal_time_convert(config->max_connection_age, FORMAT_TIME_S) / 2., 5.));
-      pgagroal_periodic_start(&max_connection_age);
-   }
-
-   if (config->validation == VALIDATION_BACKGROUND)
-   {
-      pgagroal_periodic_init(&validation, validation_cb,
-                             1000 * MAX(1. * pgagroal_time_convert(config->background_interval, FORMAT_TIME_S), 5.));
-      pgagroal_periodic_start(&validation);
-   }
-
-   if (config->disconnect_client > 0)
-   {
-      pgagroal_periodic_init(&disconnect_client, disconnect_client_cb,
-                             1000 * MIN(300., MAX(1. * config->disconnect_client / 2., 1.)));
-      pgagroal_periodic_start(&disconnect_client);
-   }
-
-   if (pgagroal_time_is_valid(config->rotate_frontend_password_timeout))
-   {
-      pgagroal_periodic_init(&rotate_frontend_password, rotate_frontend_password_cb,
-                             1000 * pgagroal_time_convert(config->rotate_frontend_password_timeout, FORMAT_TIME_S));
-      pgagroal_periodic_start(&rotate_frontend_password);
-   }
+   refresh_periodic_watchers();
 
    if (config->common.metrics > 0)
    {
@@ -2911,167 +2885,122 @@ remove_client(pid_t pid)
    }
 }
 
-static bool
-reload_configuration(bool* restart)
+static void
+start_periodic_watcher(struct periodic_watcher* watcher, bool* started, periodic_cb cb, int interval)
 {
-   char pgsql[MISC_LENGTH];
-   char old_host[MISC_LENGTH];
-   int old_port;
-   int old_metrics;
-   int old_management;
-   int old_console;
+   if (pgagroal_periodic_init(watcher, cb, interval) != PGAGROAL_EVENT_RC_OK)
+   {
+      memset(watcher, 0, sizeof(struct periodic_watcher));
+      *started = false;
+      return;
+   }
+
+   if (pgagroal_periodic_start(watcher) != PGAGROAL_EVENT_RC_OK)
+   {
+      memset(watcher, 0, sizeof(struct periodic_watcher));
+      *started = false;
+      return;
+   }
+
+   *started = true;
+}
+
+static void
+stop_periodic_watcher(struct periodic_watcher* watcher, bool* started)
+{
+   if (*started)
+   {
+      if (pgagroal_periodic_stop(watcher) != PGAGROAL_EVENT_RC_OK)
+      {
+         pgagroal_log_warn("Unable to stop periodic watcher");
+      }
+
+      memset(watcher, 0, sizeof(struct periodic_watcher));
+      *started = false;
+   }
+}
+
+static void
+refresh_periodic_watchers(void)
+{
    struct main_configuration* config;
 
    config = (struct main_configuration*)shmem;
 
-   pgagroal_health_check_stop();
+   stop_periodic_watcher(&idle_timeout_watcher, &idle_timeout_started);
+   stop_periodic_watcher(&max_connection_age_watcher, &max_connection_age_started);
+   stop_periodic_watcher(&validation_watcher, &validation_started);
+   stop_periodic_watcher(&disconnect_client_watcher, &disconnect_client_started);
+   stop_periodic_watcher(&rotate_frontend_password_watcher, &rotate_frontend_password_started);
 
-   /* Save old values before reload */
-   memset(&old_host, 0, sizeof(old_host));
-   memcpy(&old_host, config->common.host, sizeof(old_host));
-   old_port = config->common.port;
-   old_metrics = config->common.metrics;
-   old_management = config->management;
-   old_console = config->console;
+   if (pgagroal_time_is_valid(config->idle_timeout))
+   {
+      start_periodic_watcher(&idle_timeout_watcher, &idle_timeout_started, idle_timeout_cb,
+                             1000 * MAX(1. * pgagroal_time_convert(config->idle_timeout, FORMAT_TIME_S) / 2., 5.));
+   }
 
-   pgagroal_reload_configuration(restart);
+   if (pgagroal_time_is_valid(config->max_connection_age))
+   {
+      start_periodic_watcher(&max_connection_age_watcher, &max_connection_age_started, max_connection_age_cb,
+                             1000 * MAX(1. * pgagroal_time_convert(config->max_connection_age, FORMAT_TIME_S) / 2., 5.));
+   }
 
-   if (config->health_check)
+   if (config->validation == VALIDATION_BACKGROUND)
+   {
+      start_periodic_watcher(&validation_watcher, &validation_started, validation_cb,
+                             1000 * MAX(1. * pgagroal_time_convert(config->background_interval, FORMAT_TIME_S), 5.));
+   }
+
+   if (config->disconnect_client > 0)
+   {
+      start_periodic_watcher(&disconnect_client_watcher, &disconnect_client_started, disconnect_client_cb,
+                             1000 * MIN(300., MAX(1. * config->disconnect_client / 2., 1.)));
+   }
+
+   if (pgagroal_time_is_valid(config->rotate_frontend_password_timeout))
+   {
+      start_periodic_watcher(&rotate_frontend_password_watcher, &rotate_frontend_password_started, rotate_frontend_password_cb,
+                             1000 * pgagroal_time_convert(config->rotate_frontend_password_timeout, FORMAT_TIME_S));
+   }
+}
+
+static void
+manage_health_check_worker(void)
+{
+   struct main_configuration* config;
+
+   config = (struct main_configuration*)shmem;
+
+   // If health check was started and now disabled, signal it to exit
+   if (config->health_check_pid != 0 && !config->health_check)
+   {
+      pgagroal_health_check_stop();
+   }
+   // If it was stopped and now enabled, start it (if not already running)
+   else if (config->health_check && config->health_check_pid == 0)
    {
       pgagroal_health_check(main_argc, main_argv);
    }
+}
 
-   /* Only rebind main listening sockets if host or port changed */
-   if (strcmp(old_host, config->common.host) || old_port != config->common.port)
+static bool
+reload_configuration(bool* restart)
+{
+   bool health_check_changed = false;
+
+   pgagroal_reload_configuration(restart, &health_check_changed);
+
+   if (!*restart)
    {
-      shutdown_io();
-      pgagroal_io_stop(&io_uds.watcher);
-      shutdown_uds(true);
+      refresh_periodic_watchers();
 
-      memset(&pgsql, 0, sizeof(pgsql));
-      snprintf(&pgsql[0], sizeof(pgsql), PG_UDS);
-
-      if (pgagroal_bind_unix_socket(config->unix_socket_dir, &pgsql[0], &unix_pgsql_socket))
+      if (health_check_changed)
       {
-         pgagroal_log_fatal("pgagroal: Could not bind to %s/%s.%d", config->unix_socket_dir, &pgsql[0], config->common.port);
-         goto error;
-      }
-
-      free(main_fds);
-      main_fds = NULL;
-      main_fds_length = 0;
-
-      if (pgagroal_bind(config->common.host, config->common.port, &main_fds, &main_fds_length, config->nodelay, config->backlog))
-      {
-         pgagroal_log_fatal("pgagroal: Could not bind to %s:%d", config->common.host, config->common.port);
-         goto error;
-      }
-
-      if (main_fds_length > MAX_FDS)
-      {
-         pgagroal_log_fatal("pgagroal: Too many descriptors %d", main_fds_length);
-         goto error;
-      }
-
-      start_io();
-      start_uds();
-   }
-
-   /* Only rebind metrics if metrics port changed */
-   if (old_metrics != config->common.metrics)
-   {
-      for (int i = 0; i < metrics_fds_length; i++)
-      {
-         pgagroal_io_stop(&io_metrics[i].watcher);
-      }
-      shutdown_metrics();
-
-      free(metrics_fds);
-      metrics_fds = NULL;
-      metrics_fds_length = 0;
-
-      if (config->common.metrics > 0)
-      {
-         /* Bind metrics socket */
-         if (pgagroal_bind(config->common.host, config->common.metrics, &metrics_fds, &metrics_fds_length, config->nodelay, config->backlog))
-         {
-            pgagroal_log_fatal("pgagroal: Could not bind to %s:%d", config->common.host, config->common.metrics);
-            goto error;
-         }
-
-         if (metrics_fds_length > MAX_FDS)
-         {
-            pgagroal_log_fatal("pgagroal: Too many descriptors %d", metrics_fds_length);
-            goto error;
-         }
-
-         start_metrics();
+         pgagroal_health_check_stop();
       }
    }
 
-   /* Only rebind management if management port changed */
-   if (old_management != config->management)
-   {
-      for (int i = 0; i < management_fds_length; i++)
-      {
-         pgagroal_io_stop(&io_management[i].watcher);
-      }
-      shutdown_management(true);
-
-      free(management_fds);
-      management_fds = NULL;
-      management_fds_length = 0;
-
-      if (config->management > 0)
-      {
-         /* Bind management socket */
-         if (pgagroal_bind(config->common.host, config->management, &management_fds, &management_fds_length, config->nodelay, config->backlog))
-         {
-            pgagroal_log_fatal("pgagroal: Could not bind to %s:%d", config->common.host, config->management);
-            goto error;
-         }
-
-         if (management_fds_length > MAX_FDS)
-         {
-            pgagroal_log_fatal("pgagroal: Too many descriptors %d", management_fds_length);
-            goto error;
-         }
-
-         start_management();
-      }
-   }
-
-   /* Only rebind console if console port changed */
-   if (old_console != config->console)
-   {
-      for (int i = 0; i < console_fds_length; i++)
-      {
-         pgagroal_io_stop(&io_console[i].watcher);
-      }
-      shutdown_console();
-
-      free(console_fds);
-      console_fds = NULL;
-      console_fds_length = 0;
-
-      if (config->console > 0)
-      {
-         /* Bind console socket */
-         if (pgagroal_bind(config->common.host, config->console, &console_fds, &console_fds_length, config->nodelay, config->backlog))
-         {
-            pgagroal_log_fatal("pgagroal: Could not bind to %s:%d", config->common.host, config->console);
-            goto error;
-         }
-
-         if (console_fds_length > MAX_FDS)
-         {
-            pgagroal_log_fatal("pgagroal: Too many descriptors %d", console_fds_length);
-            goto error;
-         }
-
-         start_console();
-      }
-   }
+   manage_health_check_worker();
 
    for (int i = 0; i < main_fds_length; i++)
    {
@@ -3092,148 +3021,6 @@ reload_configuration(bool* restart)
    }
 
    return true;
-
-error:
-   remove_pidfile();
-   exit(1);
-}
-
-static bool
-reload_services_only(void)
-{
-   char pgsql[MISC_LENGTH];
-   struct main_configuration* config;
-
-   config = (struct main_configuration*)shmem;
-
-   // Shutdown services
-   shutdown_io();
-
-   pgagroal_io_stop(&io_uds.watcher);
-   shutdown_uds(true);
-
-   for (int i = 0; i < metrics_fds_length; i++)
-   {
-      pgagroal_io_stop(&io_metrics[i].watcher);
-   }
-   shutdown_metrics();
-
-   for (int i = 0; i < management_fds_length; i++)
-   {
-      pgagroal_io_stop(&io_management[i].watcher);
-   }
-   shutdown_management(true);
-
-   for (int i = 0; i < console_fds_length; i++)
-   {
-      pgagroal_io_stop(&io_console[i].watcher);
-   }
-   shutdown_console();
-
-   // Instead, restart services with current memory configuration
-   pgagroal_log_debug("conf set: unix socket Bound to %s/.s.PGSQL.%d", config->unix_socket_dir, config->common.port);
-
-   // Restart Unix Domain Socket with NEW port from memory
-   memset(&pgsql, 0, sizeof(pgsql));
-   snprintf(&pgsql[0], sizeof(pgsql), PG_UDS);
-
-   if (pgagroal_bind_unix_socket(config->unix_socket_dir, &pgsql[0], &unix_pgsql_socket))
-   {
-      pgagroal_log_fatal("pgagroal: Could not bind to %s/%s.%d", config->unix_socket_dir, &pgsql[0], config->common.port);
-      goto error;
-   }
-
-   pgagroal_log_debug("conf set: main port and host Bound to %s:%d", config->common.host, config->common.port);
-
-   // Restart main sockets with NEW port from memory
-   free(main_fds);
-   main_fds = NULL;
-   main_fds_length = 0;
-
-   if (pgagroal_bind(config->common.host, config->common.port, &main_fds, &main_fds_length, config->nodelay, config->backlog))
-   {
-      pgagroal_log_fatal("pgagroal: Could not bind to %s:%d", config->common.host, config->common.port);
-      goto error;
-   }
-
-   if (main_fds_length > MAX_FDS)
-   {
-      pgagroal_log_fatal("pgagroal: Too many descriptors %d", main_fds_length);
-      goto error;
-   }
-
-   start_io();
-   start_uds();
-
-   // Restart metrics if enabled
-   if (config->common.metrics > 0)
-   {
-      free(metrics_fds);
-      metrics_fds = NULL;
-      metrics_fds_length = 0;
-
-      if (pgagroal_bind(config->common.host, config->common.metrics, &metrics_fds, &metrics_fds_length, config->nodelay, config->backlog))
-      {
-         pgagroal_log_fatal("pgagroal: Could not bind to %s:%d", config->common.host, config->common.metrics);
-         goto error;
-      }
-
-      if (metrics_fds_length > MAX_FDS)
-      {
-         pgagroal_log_fatal("pgagroal: Too many descriptors %d", metrics_fds_length);
-         goto error;
-      }
-
-      start_metrics();
-   }
-
-   // Restart management
-   if (config->management > 0)
-   {
-      free(management_fds);
-      management_fds = NULL;
-      management_fds_length = 0;
-
-      if (pgagroal_bind(config->common.host, config->management, &management_fds, &management_fds_length, config->nodelay, config->backlog))
-      {
-         pgagroal_log_warn("pgagroal: Could not rebind management port %s:%d, continuing without management", config->common.host, config->management);
-         config->management = 0;
-      }
-      else
-      {
-         if (management_fds_length <= MAX_FDS)
-         {
-            start_management();
-         }
-      }
-   }
-
-   // Restart console
-   if (config->console > 0)
-   {
-      free(console_fds);
-      console_fds = NULL;
-      console_fds_length = 0;
-
-      if (pgagroal_bind(config->common.host, config->console, &console_fds, &console_fds_length, config->nodelay, config->backlog))
-      {
-         pgagroal_log_warn("pgagroal: Could not rebind console port %s:%d, continuing without console", config->common.host, config->console);
-         config->console = 0;
-      }
-      else
-      {
-         if (console_fds_length <= MAX_FDS)
-         {
-            start_console();
-         }
-      }
-   }
-
-   pgagroal_log_info("conf set: Services restarted successfully");
-   return true;
-
-error:
-   return false;
 }
 
 static void
@@ -3267,8 +3054,13 @@ reload_set_configuration(SSL* ssl, int client_fd, uint8_t compression, uint8_t e
 static void
 service_reload_cb(void)
 {
-   pgagroal_log_debug("pgagroal: service restart requested");
-   reload_services_only(); // Parent process restarts services
+   pgagroal_log_debug("pgagroal: service reload requested (SIGUSR1)");
+   pgagroal_stop_logging();
+   pgagroal_start_logging();
+   refresh_periodic_watchers();
+
+   /* Check if we need to start or stop workers based on modified shared memory */
+   manage_health_check_worker();
 }
 
 /**
