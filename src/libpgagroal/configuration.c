@@ -4840,6 +4840,22 @@ pgagroal_write_config_value(char* buffer, char* config_key, size_t buffer_size)
       {
          return to_string(buffer, config->failover_script, buffer_size);
       }
+      else if (!strncmp(key, "health_check", MISC_LENGTH))
+      {
+         return to_bool(buffer, config->health_check);
+      }
+      else if (!strncmp(key, "health_check_period", MISC_LENGTH))
+      {
+         return to_int(buffer, (int)pgagroal_time_convert(config->health_check_period, FORMAT_TIME_S));
+      }
+      else if (!strncmp(key, "health_check_timeout", MISC_LENGTH))
+      {
+         return to_int(buffer, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S));
+      }
+      else if (!strncmp(key, "health_check_user", MISC_LENGTH))
+      {
+         return to_string(buffer, config->health_check_user, buffer_size);
+      }
       else if (!strncmp(key, "failover_notify_script", MISC_LENGTH))
       {
          return to_string(buffer, config->failover_notify_script, buffer_size);
@@ -6745,6 +6761,10 @@ add_configuration_response(struct json* res)
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_MAX_RETRIES, (uintptr_t)config->max_retries, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_MAX_CONNECTIONS, (uintptr_t)config->max_connections, ValueInt64);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_ALLOW_UNKNOWN_USERS, (uintptr_t)config->allow_unknown_users, ValueBool);
+   pgagroal_json_put_time_value(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK_PERIOD, config->health_check_period, FORMAT_TIME_S);
+   pgagroal_json_put_time_value(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK_TIMEOUT, config->health_check_timeout, FORMAT_TIME_S);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK_USER, (uintptr_t)config->health_check_user, ValueString);
+   pgagroal_json_put(res, CONFIGURATION_ARGUMENT_HEALTH_CHECK, (uintptr_t)config->health_check, ValueBool);
    pgagroal_json_put_time_value(res, CONFIGURATION_ARGUMENT_AUTHENTICATION_TIMEOUT, config->common.authentication_timeout, FORMAT_TIME_S);
    pgagroal_json_put_enum_value(res, CONFIGURATION_ARGUMENT_PIPELINE, config->pipeline, to_pipeline);
    pgagroal_json_put(res, CONFIGURATION_ARGUMENT_AUTH_QUERY, (uintptr_t)config->authquery, ValueBool);
