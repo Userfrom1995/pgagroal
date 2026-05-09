@@ -108,12 +108,13 @@ pgagroal_check_server_identifiers(void);
  * @param user The username for the connection
  * @param database The database name for the connection
  * @param query The SQL query string
+ * @param timeout The timeout in seconds for server responses
  * @param auth_type The authentication type used, can be NULL
  * @param fd_out The resulting file descriptor for reading the response
  * @return 0 upon success, otherwise 1
  */
 int
-pgagroal_server_query_execute(int server_idx, char* user, char* database, char* query, int* auth_type, int* fd_out);
+pgagroal_server_query_execute(int server_idx, char* user, char* database, char* query, int timeout, int* auth_type, int* fd_out);
 
 /**
  * Get live PostgreSQL connectivity, role, and replication lag for one configured server.

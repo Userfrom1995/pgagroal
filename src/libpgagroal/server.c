@@ -195,7 +195,7 @@ pgagroal_check_server_identifiers(void)
 }
 
 int
-pgagroal_server_query_execute(int server_idx, char* user, char* database, char* query, int* auth_type, int* fd_out)
+pgagroal_server_query_execute(int server_idx, char* user, char* database, char* query, int timeout, int* auth_type, int* fd_out)
 {
    struct main_configuration* config;
    struct server* srv;
@@ -242,7 +242,7 @@ pgagroal_server_query_execute(int server_idx, char* user, char* database, char* 
    startup_msg = NULL;
 
    /* Authentication Phase */
-   status = pgagroal_read_timeout_message(NULL, fd, 5, &msg);
+   status = pgagroal_read_timeout_message(NULL, fd, timeout, &msg);
    if (status != MESSAGE_STATUS_OK || msg == NULL || msg->kind != 'R')
    {
       pgagroal_log_debug("server_query: Expected 'R' but got %c (status %d)",
@@ -305,7 +305,7 @@ pgagroal_server_query_execute(int server_idx, char* user, char* database, char* 
    {
       if (msg == NULL)
       {
-         status = pgagroal_read_timeout_message(NULL, fd, 5, &msg);
+         status = pgagroal_read_timeout_message(NULL, fd, timeout, &msg);
          if (status != MESSAGE_STATUS_OK || msg == NULL)
          {
             pgagroal_log_debug("server_query: Failed to read from server (status %d)", status);
@@ -401,6 +401,7 @@ query_system_identifier(int server_idx, char* identifier, size_t id_size, int* p
                                      config->health_check_user,
                                      config->health_check_user,
                                      (char*)pgagroal_queries_system_identifier(),
+                                     MAX(1, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S)),
                                      NULL, &fd) != 0)
    {
       return 1;
@@ -409,7 +410,9 @@ query_system_identifier(int server_idx, char* identifier, size_t id_size, int* p
    /* Parse query response and extract system_identifier from DataRow */
    while (true)
    {
-      status = pgagroal_read_timeout_message(NULL, fd, 5, &msg);
+      status = pgagroal_read_timeout_message(NULL, fd,
+                                             MAX(1, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S)),
+                                             &msg);
       if (status != MESSAGE_STATUS_OK || msg == NULL)
       {
          goto error;
@@ -489,6 +492,7 @@ query_system_identifier(int server_idx, char* identifier, size_t id_size, int* p
    }
 
    (void)pgagroal_write_terminate(NULL, fd);
+
    pgagroal_disconnect(fd);
 
    pgagroal_log_debug("system_identifier: Server [%s] (%s:%d) = %s, pg_control_version = %d",
@@ -538,6 +542,7 @@ pgagroal_server_get_connectivity_info(int server, char** status, char** primary,
                                      config->health_check_user,
                                      config->health_check_user,
                                      (char*)pgagroal_queries_is_in_recovery(),
+                                     MAX(1, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S)),
                                      NULL, &fd))
    {
       goto done;
@@ -568,6 +573,7 @@ pgagroal_server_get_connectivity_info(int server, char** status, char** primary,
                                      config->health_check_user,
                                      config->health_check_user,
                                      (char*)pgagroal_queries_replication_lag_bytes(),
+                                     MAX(1, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S)),
                                      NULL, &fd))
    {
       return 0;
