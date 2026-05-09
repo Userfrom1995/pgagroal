@@ -217,7 +217,6 @@ server_probe(int server_idx, bool* up, int* auth_type)
    int offset_q;
    char type_q;
    int len_q;
-   char buffer[8];
 
    config = (struct main_configuration*)shmem;
 
@@ -250,8 +249,6 @@ server_probe(int server_idx, bool* up, int* auth_type)
          type_q = pgagroal_read_byte(msg->data + offset_q);
          len_q = pgagroal_read_int32(msg->data + offset_q + 1);
 
-         pgagroal_log_debug("Health Trace Query: loop msg kind=%c len=%d offset=%d total=%zd", type_q, len_q, offset_q, msg->length);
-
          if (type_q == 'T' || type_q == 'C' || type_q == 'D')
          {
             query_success = true;
@@ -282,10 +279,7 @@ server_probe(int server_idx, bool* up, int* auth_type)
       }
    }
 
-   /* Send Terminate */
-   buffer[0] = 'X';
-   pgagroal_write_int32(buffer + 1, 4);
-   pgagroal_write_socket(NULL, fd, buffer, 5);
+   (void)pgagroal_write_terminate(NULL, fd);
 
    pgagroal_disconnect(fd);
 
