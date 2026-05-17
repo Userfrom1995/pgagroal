@@ -1,0 +1,460 @@
+2026-04-19 17:39:36 INFO  health.c:140 Health check started
+2026-04-19 17:40:06 INFO  health.c:186 Health: Server 0 is UP
+2026-04-19 18:17:49 INFO  main.c:1439 pgagroal: shutdown
+2026-05-18 00:36:37 TRACE network.c:391 pgagroal_connect_unix_socket: connect: /home/myuser/pgagroal/test_env/run/.s.pgagroal.2345 No such file or directory
+2026-05-18 00:36:37 TRACE network.c:434 pgagroal_disconnect: fd=4
+2026-05-18 00:36:37 TRACE network.c:434 pgagroal_disconnect: fd=-1
+2026-05-18 00:36:37 TRACE network.c:391 pgagroal_connect_unix_socket: connect: /home/myuser/pgagroal/test_env/run/.s.pgagroal.2345 No such file or directory
+2026-05-18 00:36:37 TRACE network.c:434 pgagroal_disconnect: fd=4
+2026-05-18 00:36:37 TRACE network.c:434 pgagroal_disconnect: fd=-1
+2026-05-18 02:02:18 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:02:31 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:03:08 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:03:08 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:03:08 INFO  health.c:139 Health check started
+2026-05-18 02:03:08 INFO  main.c:1378 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:03:28 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:03:28 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:03:28 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:03:28 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:03:28 INFO  health.c:139 Health check started
+2026-05-18 02:03:29 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:03:29 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:03:29 DEBUG server.c:627 system_identifier: Server [primary] (localhost:5432) = 7593625971952903019, pg_control_version = 1800
+2026-05-18 02:03:29 DEBUG prometheus.c:4045 Certificate metrics updated: configured=0, total=0, valid=0, expired=0, expiring_soon=0, inaccessible=0, parse_errors=0
+2026-05-18 02:03:29 DEBUG configuration.c:2503 Certificate metrics updated after configuration reload
+2026-05-18 02:03:29 DEBUG configuration.c:2509 Reload: Success
+2026-05-18 02:03:29 DEBUG main.c:3103 Socket: 7
+2026-05-18 02:03:29 DEBUG main.c:3105 Unix Domain Socket: 6
+2026-05-18 02:03:29 DEBUG main.c:3108 Metrics: 10
+2026-05-18 02:03:29 INFO  health.c:139 Health check started
+2026-05-18 02:03:30 DEBUG main.c:1705 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020330"
+  },
+  "Request": {}
+}
+2026-05-18 02:03:30 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:03:31 DEBUG main.c:1705 Management 12: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 12,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020331"
+  },
+  "Request": {}
+}
+2026-05-18 02:03:31 DEBUG main.c:2098 pgagroal: Management reload
+2026-05-18 02:03:31 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:03:31 DEBUG configuration.c:902 Selected backend 'io_uring'
+2026-05-18 02:03:32 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:03:32 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:03:32 INFO  health.c:139 Health check started
+2026-05-18 02:03:40 INFO  main.c:1440 pgagroal: shutdown
+2026-05-18 02:05:31 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:05:31 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:05:31 INFO  health.c:139 Health check started
+2026-05-18 02:05:31 INFO  main.c:1378 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:05:37 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:05:37 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:05:37 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:05:37 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:05:37 INFO  health.c:139 Health check started
+2026-05-18 02:05:38 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:05:38 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:05:38 DEBUG server.c:627 system_identifier: Server [primary] (localhost:5432) = 7593625971952903019, pg_control_version = 1800
+2026-05-18 02:05:38 DEBUG prometheus.c:4045 Certificate metrics updated: configured=0, total=0, valid=0, expired=0, expiring_soon=0, inaccessible=0, parse_errors=0
+2026-05-18 02:05:38 DEBUG configuration.c:2503 Certificate metrics updated after configuration reload
+2026-05-18 02:05:38 DEBUG configuration.c:2509 Reload: Success
+2026-05-18 02:05:38 DEBUG main.c:3103 Socket: 7
+2026-05-18 02:05:38 DEBUG main.c:3105 Unix Domain Socket: 6
+2026-05-18 02:05:38 DEBUG main.c:3108 Metrics: 10
+2026-05-18 02:05:38 INFO  health.c:139 Health check started
+2026-05-18 02:05:39 DEBUG main.c:1705 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020539"
+  },
+  "Request": {}
+}
+2026-05-18 02:05:39 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:05:40 DEBUG main.c:1705 Management 12: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 12,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020540"
+  },
+  "Request": {}
+}
+2026-05-18 02:05:40 DEBUG main.c:2098 pgagroal: Management reload
+2026-05-18 02:05:40 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:05:40 DEBUG configuration.c:902 Selected backend 'io_uring'
+2026-05-18 02:05:41 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:05:41 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:05:41 INFO  health.c:139 Health check started
+2026-05-18 02:06:11 INFO  health.c:184 Health: Server 0 is UP
+2026-05-18 02:07:50 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:07:50 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:07:50 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:07:50 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:07:50 INFO  health.c:139 Health check started
+2026-05-18 02:07:51 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:07:51 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:07:51 DEBUG server.c:627 system_identifier: Server [primary] (localhost:5432) = 7593625971952903019, pg_control_version = 1800
+2026-05-18 02:07:51 DEBUG prometheus.c:4045 Certificate metrics updated: configured=0, total=0, valid=0, expired=0, expiring_soon=0, inaccessible=0, parse_errors=0
+2026-05-18 02:07:51 DEBUG configuration.c:2503 Certificate metrics updated after configuration reload
+2026-05-18 02:07:51 DEBUG configuration.c:2509 Reload: Success
+2026-05-18 02:07:51 DEBUG main.c:3103 Socket: 7
+2026-05-18 02:07:51 DEBUG main.c:3105 Unix Domain Socket: 6
+2026-05-18 02:07:51 DEBUG main.c:3108 Metrics: 10
+2026-05-18 02:07:51 INFO  health.c:139 Health check started
+2026-05-18 02:07:52 DEBUG main.c:1705 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020752"
+  },
+  "Request": {}
+}
+2026-05-18 02:07:52 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:07:53 DEBUG main.c:1705 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020753"
+  },
+  "Request": {}
+}
+2026-05-18 02:07:53 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:07:53 DEBUG main.c:1705 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020753"
+  },
+  "Request": {}
+}
+2026-05-18 02:07:53 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:07:53 DEBUG main.c:1705 Management 12: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 12,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518020753"
+  },
+  "Request": {}
+}
+2026-05-18 02:07:53 DEBUG main.c:2098 pgagroal: Management reload
+2026-05-18 02:07:53 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:07:53 DEBUG configuration.c:902 Selected backend 'io_uring'
+2026-05-18 02:07:54 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:07:54 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:07:54 INFO  health.c:139 Health check started
+2026-05-18 02:08:11 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:08:11 INFO  configuration.c:4111 Restart required for health_check - Existing true New false
+2026-05-18 02:08:11 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:11 WARN  configuration.c:3867 Settings cannot be applied
+2026-05-18 02:08:11 INFO  configuration.c:6545 Configuration change health_check = off requires restart - changes not applied
+2026-05-18 02:08:11 INFO  configuration.c:7089 Conf Set: Restart required for health_check=off. Current value: <unknown>
+2026-05-18 02:08:11 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:14 INFO  configuration.c:4111 Restart required for health_check - Existing false New true
+2026-05-18 02:08:14 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:14 WARN  configuration.c:3867 Settings cannot be applied
+2026-05-18 02:08:14 INFO  configuration.c:6545 Configuration change health_check = on requires restart - changes not applied
+2026-05-18 02:08:14 INFO  configuration.c:7089 Conf Set: Restart required for health_check=on. Current value: <unknown>
+2026-05-18 02:08:14 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:17 INFO  configuration.c:4089 Restart required for health_check_period - Existing 30 New 10
+2026-05-18 02:08:17 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:17 WARN  configuration.c:3867 Settings cannot be applied
+2026-05-18 02:08:17 INFO  configuration.c:6545 Configuration change health_check_period = 10 requires restart - changes not applied
+2026-05-18 02:08:17 INFO  configuration.c:7089 Conf Set: Restart required for health_check_period=10. Current value: <unknown>
+2026-05-18 02:08:17 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:17 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:08:17 INFO  configuration.c:4089 Restart required for health_check_timeout - Existing 5 New 3
+2026-05-18 02:08:17 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:17 WARN  configuration.c:3867 Settings cannot be applied
+2026-05-18 02:08:17 INFO  configuration.c:6545 Configuration change health_check_timeout = 3 requires restart - changes not applied
+2026-05-18 02:08:17 INFO  configuration.c:7089 Conf Set: Restart required for health_check_timeout=3. Current value: <unknown>
+2026-05-18 02:08:17 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:17 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:08:17 FATAL main.c:3180 pgagroal: Could not bind to localhost:2345
+2026-05-18 02:08:19 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:08:19 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:19 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:19 INFO  configuration.c:6551 Configuration change port = 9999 applied successfully
+2026-05-18 02:08:19 INFO  configuration.c:7101 Conf Set: Successfully applied port: 2345 -> 9999
+2026-05-18 02:08:19 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:19 WARN  ev.c:520 pgagroal_io_stop: watcher not found in events list (fd rcv=-1, snd=6, events_nr=3) - possible double-stop
+2026-05-18 02:08:19 WARN  ev.c:520 pgagroal_io_stop: watcher not found in events list (fd rcv=-1, snd=10, events_nr=3) - possible double-stop
+2026-05-18 02:08:19 FATAL main.c:3202 pgagroal: Could not bind to localhost:3000
+2026-05-18 02:08:19 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:08:19 INFO  configuration.c:4089 Restart required for health_check_period - Existing 10 New 30
+2026-05-18 02:08:19 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:19 WARN  configuration.c:3867 Settings cannot be applied
+2026-05-18 02:08:19 INFO  configuration.c:6545 Configuration change health_check_period = 30 requires restart - changes not applied
+2026-05-18 02:08:19 INFO  configuration.c:7089 Conf Set: Restart required for health_check_period=30. Current value: <unknown>
+2026-05-18 02:08:19 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:19 INFO  configuration.c:4089 Restart required for health_check_timeout - Existing 3 New 5
+2026-05-18 02:08:19 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:08:19 WARN  configuration.c:3867 Settings cannot be applied
+2026-05-18 02:08:19 INFO  configuration.c:6545 Configuration change health_check_timeout = 5 requires restart - changes not applied
+2026-05-18 02:08:19 INFO  configuration.c:7089 Conf Set: Restart required for health_check_timeout=5. Current value: <unknown>
+2026-05-18 02:08:19 INFO  configuration.c:7114 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:08:24 INFO  health.c:184 Health: Server 0 is UP
+2026-05-18 02:09:28 INFO  configuration.c:6975 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:09:32 INFO  main.c:1440 pgagroal: shutdown
+2026-05-18 02:18:23 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:18:23 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:18:23 INFO  health.c:140 Health check started
+2026-05-18 02:18:23 INFO  main.c:1352 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:18:24 WARN  configuration.c:4059 Restart required for port - Existing 2345 New 9999
+2026-05-18 02:18:24 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:18:24 INFO  configuration.c:6605 Configuration change port = 9999 requires restart - changes not applied
+2026-05-18 02:18:24 INFO  configuration.c:7151 Conf Set: Restart required for port=9999. Current value: 2345
+2026-05-18 02:18:24 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:18:24 INFO  main.c:1414 pgagroal: shutdown
+2026-05-18 02:18:51 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:18:51 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:18:51 INFO  health.c:140 Health check started
+2026-05-18 02:18:52 INFO  main.c:1352 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:18:52 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:18:52 INFO  configuration.c:6609 Configuration change health_check = off applied successfully
+2026-05-18 02:18:52 INFO  configuration.c:7163 Conf Set: Successfully applied health_check: on -> off
+2026-05-18 02:18:52 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:18:55 INFO  configuration.c:6609 Configuration change health_check = on applied successfully
+2026-05-18 02:18:55 INFO  configuration.c:7163 Conf Set: Successfully applied health_check: off -> on
+2026-05-18 02:18:55 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:18:55 INFO  health.c:140 Health check started
+2026-05-18 02:18:58 INFO  configuration.c:6609 Configuration change health_check_period = 10 applied successfully
+2026-05-18 02:18:58 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_period: 30 -> 10
+2026-05-18 02:18:58 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:18:58 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:18:58 INFO  configuration.c:6609 Configuration change health_check_timeout = 3 applied successfully
+2026-05-18 02:18:58 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_timeout: 5 -> 3
+2026-05-18 02:18:58 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:18:58 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:01 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:01 WARN  configuration.c:4059 Restart required for port - Existing 2345 New 9999
+2026-05-18 02:19:01 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:19:01 INFO  configuration.c:6605 Configuration change port = 9999 requires restart - changes not applied
+2026-05-18 02:19:01 INFO  configuration.c:7151 Conf Set: Restart required for port=9999. Current value: 2345
+2026-05-18 02:19:01 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:19:01 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:01 INFO  configuration.c:6609 Configuration change health_check_period = 30 applied successfully
+2026-05-18 02:19:01 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_period: 10 -> 30
+2026-05-18 02:19:01 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:19:01 INFO  configuration.c:6609 Configuration change health_check_timeout = 5 applied successfully
+2026-05-18 02:19:01 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_timeout: 3 -> 5
+2026-05-18 02:19:01 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:19:01 INFO  main.c:1414 pgagroal: shutdown
+2026-05-18 02:19:25 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:19:25 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:19:25 INFO  health.c:140 Health check started
+2026-05-18 02:19:25 INFO  main.c:1352 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:19:26 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:26 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:26 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:19:27 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:19:27 DEBUG prometheus.c:4045 Certificate metrics updated: configured=0, total=0, valid=0, expired=0, expiring_soon=0, inaccessible=0, parse_errors=0
+2026-05-18 02:19:27 DEBUG configuration.c:2507 Certificate metrics updated after configuration reload
+2026-05-18 02:19:27 DEBUG configuration.c:2513 Reload: Success
+2026-05-18 02:19:27 DEBUG main.c:3032 Socket: 7
+2026-05-18 02:19:27 DEBUG main.c:3034 Unix Domain Socket: 6
+2026-05-18 02:19:27 DEBUG main.c:3037 Metrics: 10
+2026-05-18 02:19:27 DEBUG pool.c:675 pgagroal_idle_timeout
+2026-05-18 02:19:27 DEBUG pool.c:1268 pgagroal_pool_status: 0/8
+2026-05-18 02:19:27 DEBUG pool.c:1562 pgagroal_pool_status: State: FREE
+2026-05-18 02:19:27 DEBUG pool.c:1563                       Slot: 0
+2026-05-18 02:19:27 DEBUG pool.c:1564                       Server: 0
+2026-05-18 02:19:27 DEBUG pool.c:1565                       User: postgres
+2026-05-18 02:19:27 DEBUG pool.c:1566                       Database: postgres
+2026-05-18 02:19:27 DEBUG pool.c:1567                       AppName: 
+2026-05-18 02:19:27 DEBUG pool.c:1568                       Rule: 0
+2026-05-18 02:19:27 DEBUG pool.c:1569                       Start: Mon May 18 02:19:25 2026
+2026-05-18 02:19:27 DEBUG pool.c:1570                       Time: Mon May 18 02:19:25 2026
+2026-05-18 02:19:27 DEBUG pool.c:1571                       FD: 12
+2026-05-18 02:19:27 DEBUG pool.c:1562 pgagroal_pool_status: State: FREE
+2026-05-18 02:19:27 DEBUG pool.c:1563                       Slot: 1
+2026-05-18 02:19:27 DEBUG pool.c:1564                       Server: 0
+2026-05-18 02:19:27 DEBUG pool.c:1565                       User: postgres
+2026-05-18 02:19:27 DEBUG pool.c:1566                       Database: postgres
+2026-05-18 02:19:27 DEBUG pool.c:1567                       AppName: 
+2026-05-18 02:19:27 DEBUG pool.c:1568                       Rule: 0
+2026-05-18 02:19:27 DEBUG pool.c:1569                       Start: Mon May 18 02:19:25 2026
+2026-05-18 02:19:27 DEBUG pool.c:1570                       Time: Mon May 18 02:19:25 2026
+2026-05-18 02:19:27 DEBUG pool.c:1571                       FD: 13
+2026-05-18 02:19:27 DEBUG pool.c:1562 pgagroal_pool_status: State: FREE
+2026-05-18 02:19:27 DEBUG pool.c:1563                       Slot: 2
+2026-05-18 02:19:27 DEBUG pool.c:1564                       Server: 0
+2026-05-18 02:19:27 DEBUG pool.c:1565                       User: postgres
+2026-05-18 02:19:27 DEBUG pool.c:1566                       Database: postgres
+2026-05-18 02:19:27 DEBUG pool.c:1567                       AppName: 
+2026-05-18 02:19:27 DEBUG pool.c:1568                       Rule: 0
+2026-05-18 02:19:27 DEBUG pool.c:1569                       Start: Mon May 18 02:19:25 2026
+2026-05-18 02:19:27 DEBUG pool.c:1570                       Time: Mon May 18 02:19:25 2026
+2026-05-18 02:19:27 DEBUG pool.c:1571                       FD: 15
+2026-05-18 02:19:27 DEBUG pool.c:1552 pgagroal_pool_status: State: NOTINIT
+2026-05-18 02:19:27 DEBUG pool.c:1553                       Slot: 3
+2026-05-18 02:19:27 DEBUG pool.c:1554                       FD: -1
+2026-05-18 02:19:27 DEBUG pool.c:1552 pgagroal_pool_status: State: NOTINIT
+2026-05-18 02:19:27 DEBUG pool.c:1553                       Slot: 4
+2026-05-18 02:19:27 DEBUG pool.c:1554                       FD: -1
+2026-05-18 02:19:27 DEBUG pool.c:1552 pgagroal_pool_status: State: NOTINIT
+2026-05-18 02:19:27 DEBUG pool.c:1553                       Slot: 5
+2026-05-18 02:19:27 DEBUG pool.c:1554                       FD: -1
+2026-05-18 02:19:27 DEBUG pool.c:1552 pgagroal_pool_status: State: NOTINIT
+2026-05-18 02:19:27 DEBUG pool.c:1553                       Slot: 6
+2026-05-18 02:19:27 DEBUG pool.c:1554                       FD: -1
+2026-05-18 02:19:27 DEBUG pool.c:1552 pgagroal_pool_status: State: NOTINIT
+2026-05-18 02:19:27 DEBUG pool.c:1553                       Slot: 7
+2026-05-18 02:19:27 DEBUG pool.c:1554                       FD: -1
+2026-05-18 02:19:28 DEBUG main.c:1679 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518021928"
+  },
+  "Request": {}
+}
+2026-05-18 02:19:28 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:29 DEBUG main.c:1679 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518021929"
+  },
+  "Request": {}
+}
+2026-05-18 02:19:29 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:29 DEBUG main.c:1679 Management 3: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 3,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518021929"
+  },
+  "Request": {}
+}
+2026-05-18 02:19:29 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:19:29 DEBUG main.c:1679 Management 12: {
+  "Header": {
+    "ClientVersion": "2.2.0",
+    "Command": 12,
+    "Compression": 0,
+    "Encryption": 0,
+    "Output": 0,
+    "Timestamp": "20260518021929"
+  },
+  "Request": {}
+}
+2026-05-18 02:19:29 DEBUG main.c:2072 pgagroal: Management reload
+2026-05-18 02:19:29 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:19:29 DEBUG configuration.c:902 Selected backend 'io_uring'
+2026-05-18 02:19:29 DEBUG configuration.c:4293 PID file automatically set to: [/home/myuser/pgagroal/test_env/run/pgagroal.2345.pid]
+2026-05-18 02:19:30 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:19:30 INFO  main.c:1414 pgagroal: shutdown
+2026-05-18 02:19:46 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:20:26 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:20:26 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:20:26 INFO  health.c:140 Health check started
+2026-05-18 02:20:26 INFO  main.c:1352 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:20:26 INFO  configuration.c:6609 Configuration change log_level = info applied successfully
+2026-05-18 02:20:26 INFO  configuration.c:7163 Conf Set: Successfully applied log_level: info -> info
+2026-05-18 02:20:26 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:20:27 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:20:27 INFO  configuration.c:6609 Configuration change blocking_timeout = 50 applied successfully
+2026-05-18 02:20:27 INFO  configuration.c:7163 Conf Set: Successfully applied blocking_timeout: 30 -> 50
+2026-05-18 02:20:27 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:20:27 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:20:27 WARN  configuration.c:4059 Restart required for port - Existing 2345 New 2346
+2026-05-18 02:20:27 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:20:27 INFO  configuration.c:6605 Configuration change port = 2346 requires restart - changes not applied
+2026-05-18 02:20:27 INFO  configuration.c:7151 Conf Set: Restart required for port=2346. Current value: 2345
+2026-05-18 02:20:27 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:20:27 WARN  configuration.c:4059 Restart required for metrics - Existing 3000 New 9901
+2026-05-18 02:20:27 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:20:27 INFO  configuration.c:6605 Configuration change metrics = 9901 requires restart - changes not applied
+2026-05-18 02:20:27 INFO  configuration.c:7151 Conf Set: Restart required for metrics=9901. Current value: 3000
+2026-05-18 02:20:27 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:20:27 WARN  configuration.c:4059 Restart required for pipeline - Existing 0 New 1
+2026-05-18 02:20:27 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:20:27 INFO  configuration.c:6605 Configuration change pipeline = session requires restart - changes not applied
+2026-05-18 02:20:27 INFO  configuration.c:7151 Conf Set: Restart required for pipeline=session. Current value: performance
+2026-05-18 02:20:27 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:20:27 WARN  configuration.c:4059 Restart required for Server <primary>, parameter <port> - Existing 5432 New 5433
+2026-05-18 02:20:27 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:20:27 INFO  configuration.c:6605 Configuration change server.primary.port = 5433 requires restart - changes not applied
+2026-05-18 02:20:27 INFO  configuration.c:7151 Conf Set: Restart required for server.primary.port=5433. Current value: 5432
+2026-05-18 02:20:27 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:20:27 ERROR configuration.c:7120 Conf Set: Failed to apply configuration change invalid_key=value
+2026-05-18 02:20:27 ERROR cli.c:1498 Configuration change failed
+
+2026-05-18 02:20:27 INFO  main.c:1414 pgagroal: shutdown
+2026-05-18 02:21:23 WARN  configuration.c:534 pgagroal: max_connections (100) is greater than allowed (8)
+2026-05-18 02:21:23 INFO  server.c:195 Checking server system identifiers
+2026-05-18 02:21:23 INFO  health.c:140 Health check started
+2026-05-18 02:21:23 INFO  main.c:1352 pgagroal: 2.2.0 started on localhost:2345
+2026-05-18 02:21:26 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:21:26 INFO  configuration.c:6609 Configuration change health_check = off applied successfully
+2026-05-18 02:21:26 INFO  configuration.c:7163 Conf Set: Successfully applied health_check: on -> off
+2026-05-18 02:21:26 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:29 INFO  configuration.c:6609 Configuration change health_check = on applied successfully
+2026-05-18 02:21:29 INFO  configuration.c:7163 Conf Set: Successfully applied health_check: off -> on
+2026-05-18 02:21:29 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:29 INFO  health.c:140 Health check started
+2026-05-18 02:21:32 INFO  configuration.c:6609 Configuration change health_check_period = 10 applied successfully
+2026-05-18 02:21:32 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_period: 30 -> 10
+2026-05-18 02:21:32 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:32 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:21:32 INFO  configuration.c:6609 Configuration change health_check_timeout = 3 applied successfully
+2026-05-18 02:21:32 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_timeout: 5 -> 3
+2026-05-18 02:21:32 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:32 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:21:34 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:21:34 WARN  configuration.c:4059 Restart required for port - Existing 2345 New 9999
+2026-05-18 02:21:34 WARN  configuration.c:3665 Configuration reload denied: restart required for one or more parameters. Running state preserved.
+2026-05-18 02:21:34 INFO  configuration.c:6605 Configuration change port = 9999 requires restart - changes not applied
+2026-05-18 02:21:34 INFO  configuration.c:7151 Conf Set: Restart required for port=9999. Current value: 2345
+2026-05-18 02:21:34 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:34 INFO  configuration.c:7037 Conf Get (Elapsed: 00:00:00)
+2026-05-18 02:21:34 INFO  configuration.c:6609 Configuration change health_check_period = 30 applied successfully
+2026-05-18 02:21:34 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_period: 10 -> 30
+2026-05-18 02:21:34 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:34 INFO  configuration.c:6609 Configuration change health_check_timeout = 5 applied successfully
+2026-05-18 02:21:34 INFO  configuration.c:7163 Conf Set: Successfully applied health_check_timeout: 3 -> 5
+2026-05-18 02:21:34 INFO  configuration.c:7176 Conf Set (Elapsed: 00:00:00)
+2026-05-18 02:21:59 INFO  health.c:186 Health: Server 0 is UP
+2026-05-18 02:42:29 INFO  main.c:1414 pgagroal: shutdown
