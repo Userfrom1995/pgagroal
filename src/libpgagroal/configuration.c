@@ -92,7 +92,6 @@ static void copy_hba(struct hba* dst, struct hba* src);
 static void copy_user(struct user* dst, struct user* src);
 static int restart_int(char* name, int e, int n);
 static int __attribute__((unused)) restart_bool(char* name, bool e, bool n);
-static int restart_time(char* name, pgagroal_time_t e, pgagroal_time_t n, bool requires_restart);
 static int restart_string(char* name, char* e, char* n, bool skip_non_existing);
 static int restart_limit(char* name, struct main_configuration* config, struct main_configuration* reload);
 static int restart_server(struct server* src, struct server* dst);
@@ -101,7 +100,6 @@ static bool is_empty_string(char* s);
 static bool is_same_server(struct server* s1, struct server* s2);
 static bool is_same_tls(struct server* s1, struct server* s2);
 static bool is_valid_config_key(const char* config_key, struct config_key_info* key_info);
-static void reset_server_failures(void);
 
 static bool key_in_section(char* wanted, char* section, char* key, bool global, bool* unknown);
 static bool is_comment_line(char* line);
@@ -4076,29 +4074,6 @@ restart_int(char* name, int e, int n)
    return 0;
 }
 
-static int
-restart_time(char* name, pgagroal_time_t e, pgagroal_time_t n, bool requires_restart)
-{
-   int64_t old_time = pgagroal_time_convert(e, FORMAT_TIME_S);
-   int64_t new_time = pgagroal_time_convert(n, FORMAT_TIME_S);
-
-   if (old_time != new_time)
-   {
-      if (requires_restart)
-      {
-         pgagroal_log_info("Restart required for %s - Existing %" PRId64 " New %" PRId64, name, old_time, new_time);
-         return 1;
-      }
-      else
-      {
-         pgagroal_log_debug("Reloaded %s - Existing %" PRId64 " New %" PRId64, name, old_time, new_time);
-         return 0;
-      }
-   }
-
-   return 0;
-}
-
 /**
  * Utility function prints a line in the log when a restart is required.
  * @return 0 when parameter values are same, 1 when a restart required.
@@ -7375,15 +7350,4 @@ pgagroal_is_binary_file(const char* path)
 
 error:
    return true;
-}
-
-static void
-reset_server_failures(void)
-{
-   struct main_configuration* config = (struct main_configuration*)shmem;
-
-   FOREACH_VALID_SERVER
-   {
-      config->servers[i].failures = 0;
-   }
 }
