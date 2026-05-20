@@ -227,7 +227,12 @@ server_probe(int server_idx, bool* up, int* auth_type)
                       server_idx, config->servers[server_idx].host,
                       config->servers[server_idx].port, config->health_check_user);
 
-   if (pgagroal_server_query_execute(server_idx, config->health_check_user, config->health_check_user, "SELECT 1", auth_type, &fd) != 0)
+   if (pgagroal_server_query_execute(server_idx,
+                                     config->health_check_user,
+                                     config->health_check_user,
+                                     "SELECT 1",
+                                     MAX(1, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S)),
+                                     auth_type, &fd) != 0)
    {
       pgagroal_log_debug("Health: Failed to connect to server %d", server_idx);
       return 1;
@@ -236,7 +241,9 @@ server_probe(int server_idx, bool* up, int* auth_type)
    /* Wait for query response */
    while (true)
    {
-      status = pgagroal_read_timeout_message(NULL, fd, 5, &msg);
+      status = pgagroal_read_timeout_message(NULL, fd,
+                                             MAX(1, (int)pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S)),
+                                             &msg);
       if (status != MESSAGE_STATUS_OK || msg == NULL)
       {
          pgagroal_log_debug("Health: Failed to read query response (status %d)", status);
