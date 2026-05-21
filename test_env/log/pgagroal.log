@@ -1,0 +1,2 @@
+2026-04-19 01:02:16 WARN  configuration.c:4011 Restart required for Server <primary>, parameter <port> - Existing 5432 New 2345
+2026-04-19 01:02:16 WARN  configuration.c:3668 Configuration reload deferred: restart required for one or more parameters. Running state preserved.

@@ -1,0 +1,51 @@
+[pgagroal]
+host = localhost
+port = 2345
+log_type = console
+log_level = debug5
+log_path = /home/myuser/pgagroal/non-tls1.log
+max_connections = 8
+# metrics = 2502
+idle_timeout = 0
+validation = off
+unix_socket_dir = /tmp/
+#ev_backend = auto
+pipeline = session
+ev_backend = io_uring
+# non_blocking = on
+allow_unknown_users = false
+blocking_timeout=0
+# graceful_shutdown_timeout = 0
+management = 2346
+# tls = on
+# tls_cert_file = /home/base/tls/pgagroal.crt
+# tls_key_file = /home/base/tls/pgagroal.key
+# tls_ca_file = /home/base/tls/pgagroal.crt
+tls = off
+# tls_ca_file = /etc/pgagroal/tls/ca.crt          
+tls_cert_file = /etc/pgagroal/tls/client.crt   
+tls_key_file = /etc/pgagroal/tls/client.key 
+# metrics_cert_file=/home/base/tls/pgagroal.crt
+# metrics_key_file=/home/base/tls/pgagroal.key
+# metrics_ca_file=/home/base/tls/pgagroal.crt
+
+
+
+[primary]
+host = localhost
+port = 5432
+# initial_size = 4
+# Enable TLS between pgagroal and PostgreSQL    
+tls = off
+tls_ca_file = /etc/pgagroal/tls/ca.crt          
+tls_cert_file = /etc/pgagroal/tls/client.crt   
+tls_key_file = /etc/pgagroal/tls/client.key     
+
+# [primary1]
+# host = 127.0.0.1
+# port = 5432
+# # # Enable TLS between pgagroal and PostgreSQL    
+# # tls = off
+# # tls_cert_file = /home/base/tls/pgagroal1.crt
+# # tls_key_file = /home/base/tls/pgagroal.key
+# # tls_ca_file = /home/base/tls/pgagroal.crt

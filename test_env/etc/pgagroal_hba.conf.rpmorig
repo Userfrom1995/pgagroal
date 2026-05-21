@@ -1,0 +1,5 @@
+#
+# TYPE  DATABASE USER  ADDRESS  METHOD
+#
+host    all      all   all     trust
+# hostssl admin all 0.0.0.0/0 scram-sha-256
