@@ -105,13 +105,14 @@ pgagroal_health_check_stop(void)
    {
       kill(config->health_check_pid, SIGTERM);
 
-      for (int i = 0; i < 50; i++)
+      /* Wait up to 2s for exit - the worker checks its flags every 1s via sleep(1) */
+      for (int i = 0; i < 10; i++)
       {
          if (kill(config->health_check_pid, 0))
          {
             break;
          }
-         SLEEP(100000000L);
+         SLEEP(200000000L);
       }
 
       waitpid(config->health_check_pid, NULL, WNOHANG);
@@ -143,16 +144,17 @@ health_check_loop(void)
       previous_state[i] = -2; /* Initial value representing 'never checked' */
    }
 
-   while (config->keep_running)
+   while (config->keep_running && config->health_check)
    {
-      /* Sleep for the configured period, but check keep_running every second */
+      /* Sleep for the configured period, but check flags every second */
+      period = config->health_check_period;
       t = pgagroal_time_convert(period, FORMAT_TIME_S);
-      for (int32_t i = 0; i < t && config->keep_running; i++)
+      for (int32_t i = 0; i < t && config->keep_running && config->health_check; i++)
       {
          sleep(1);
       }
 
-      if (!config->keep_running)
+      if (!config->keep_running || !config->health_check)
       {
          break;
       }

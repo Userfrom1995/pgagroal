@@ -86,22 +86,22 @@ static int as_seconds(char* str, pgagroal_time_t* result, pgagroal_time_t defaul
 static unsigned int as_bytes(char* str, unsigned int* bytes, unsigned int default_bytes);
 static int extract_alias_with_space(char* str, int offset, char** db_part);
 
-static bool transfer_configuration(struct main_configuration* config, struct main_configuration* reload);
+static bool transfer_configuration(struct main_configuration* config, struct main_configuration* reload, bool* health_check_changed);
 static void copy_server(struct server* dst, struct server* src);
 static void copy_hba(struct hba* dst, struct hba* src);
 static void copy_user(struct user* dst, struct user* src);
 static int restart_int(char* name, int e, int n);
 static int __attribute__((unused)) restart_bool(char* name, bool e, bool n);
-static int restart_time(char* name, pgagroal_time_t e, pgagroal_time_t n, bool requires_restart);
 static int restart_string(char* name, char* e, char* n, bool skip_non_existing);
 static int restart_limit(char* name, struct main_configuration* config, struct main_configuration* reload);
 static int restart_server(struct server* src, struct server* dst);
+static bool health_check_settings_changed(struct main_configuration* config, struct main_configuration* reload);
+static void reset_health_check_state(struct main_configuration* config);
 
 static bool is_empty_string(char* s);
 static bool is_same_server(struct server* s1, struct server* s2);
 static bool is_same_tls(struct server* s1, struct server* s2);
 static bool is_valid_config_key(const char* config_key, struct config_key_info* key_info);
-static void reset_server_failures(void);
 
 static bool key_in_section(char* wanted, char* section, char* key, bool global, bool* unknown);
 static bool is_comment_line(char* line);
@@ -2378,7 +2378,7 @@ pgagroal_validate_superuser_configuration(void* shm __attribute__((unused)))
 }
 
 int
-pgagroal_reload_configuration(bool* r)
+pgagroal_reload_configuration(bool* r, bool* health_check_changed)
 {
    size_t reload_size;
    struct main_configuration* reload = NULL;
@@ -2387,6 +2387,10 @@ pgagroal_reload_configuration(bool* r)
    config = (struct main_configuration*)shmem;
 
    *r = false;
+   if (health_check_changed != NULL)
+   {
+      *health_check_changed = false;
+   }
 
    pgagroal_log_trace("Configuration: %s", config->common.configuration_path);
    pgagroal_log_trace("HBA: %s", config->hba_path);
@@ -2490,7 +2494,7 @@ pgagroal_reload_configuration(bool* r)
       goto error;
    }
 
-   *r = transfer_configuration(config, reload);
+   *r = transfer_configuration(config, reload, health_check_changed);
    // Update certificate metrics after successful reload
    if (config->common.metrics > 0)
    {
@@ -3558,14 +3562,125 @@ extract_alias_with_space(char* str, int offset, char** db_part)
  * @return True, if restart or false if not
  */
 static bool
-transfer_configuration(struct main_configuration* config, struct main_configuration* reload)
+check_restart_required(struct main_configuration* config, struct main_configuration* reload)
 {
-   bool changed = false;
+   bool restart = false;
+
+   if (restart_string("host", config->common.host, reload->common.host, false))
+   {
+      restart = true;
+   }
+   if (restart_int("port", config->common.port, reload->common.port))
+   {
+      restart = true;
+   }
+   if (restart_int("metrics", config->common.metrics, reload->common.metrics))
+   {
+      restart = true;
+   }
+   if (restart_int("metrics_cache_max_size", config->common.metrics_cache_max_size, reload->common.metrics_cache_max_size))
+   {
+      restart = true;
+   }
+   if (restart_int("management", config->management, reload->management))
+   {
+      restart = true;
+   }
+   if (restart_int("console", config->console, reload->console))
+   {
+      restart = true;
+   }
+   if (restart_int("pipeline", config->pipeline, reload->pipeline))
+   {
+      restart = true;
+   }
+   if (restart_int("log_type", config->common.log_type, reload->common.log_type))
+   {
+      restart = true;
+   }
+   if (restart_int("max_connections", config->max_connections, reload->max_connections))
+   {
+      restart = true;
+   }
+   if (restart_string("pidfile", config->pidfile, reload->pidfile, true))
+   {
+      restart = true;
+   }
+   if (restart_int("ev_backend", config->ev_backend, reload->ev_backend))
+   {
+      restart = true;
+   }
+   if (restart_int("hugepage", config->common.hugepage, reload->common.hugepage))
+   {
+      restart = true;
+   }
+   if (restart_string("unix_socket_dir", config->unix_socket_dir, reload->unix_socket_dir, false))
+   {
+      restart = true;
+   }
+   if (restart_bool("tls", config->common.tls, reload->common.tls))
+   {
+      restart = true;
+   }
+
+   if (config->number_of_servers > reload->number_of_servers)
+   {
+      if (restart_int("decreasing number of servers", config->number_of_servers, reload->number_of_servers))
+      {
+         restart = true;
+      }
+   }
+
+   for (int i = 0; i < reload->number_of_servers; i++)
+   {
+      if (i < config->number_of_servers)
+      {
+         if (restart_server(&reload->servers[i], &config->servers[i]))
+         {
+            restart = true;
+         }
+      }
+   }
+
+   if (restart_limit("limits", config, reload))
+   {
+      restart = true;
+   }
+
+   return restart;
+}
+
+static bool
+transfer_configuration(struct main_configuration* config, struct main_configuration* reload, bool* health_check_changed)
+{
+   bool reset_health = false;
 
 #ifdef HAVE_SYSTEMD
    sd_notify(0, "RELOADING=1");
 #endif
 
+   /* Check if any parameter requires a restart before applying any changes */
+   if (check_restart_required(config, reload))
+   {
+      pgagroal_log_warn("Configuration reload denied: restart required for one or more parameters. Running state preserved.");
+#ifdef HAVE_SYSTEMD
+      sd_notify(0, "READY=1");
+#endif
+      return true;
+   }
+
+   reset_health = health_check_settings_changed(config, reload);
+   if (health_check_changed != NULL)
+   {
+      *health_check_changed = reset_health;
+   }
+
+   /* No restart required: apply all changes to the shared memory.
+    * Structural parameters (host, port, metrics, management, console, etc.) are safe
+    * to copy here because check_restart_required() above verified they are unchanged.
+    */
+
+   /* Network resources */
    memcpy(config->common.host, reload->common.host, MISC_LENGTH);
    config->common.port = reload->common.port;
    config->common.metrics = reload->common.metrics;
@@ -3573,40 +3688,26 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    memcpy(config->common.metrics_key_file, reload->common.metrics_key_file, MAX_PATH);
    memcpy(config->common.metrics_ca_file, reload->common.metrics_ca_file, MAX_PATH);
    config->common.metrics_cache_max_age = reload->common.metrics_cache_max_age;
-   if (restart_int("metrics_cache_max_size", config->common.metrics_cache_max_size, reload->common.metrics_cache_max_size))
-   {
-      changed = true;
-   }
+   config->common.metrics_cache_max_size = reload->common.metrics_cache_max_size;
    config->management = reload->management;
    config->console = reload->console;
-
    config->update_process_title = reload->update_process_title;
 
-   /* gracefully */
-
-   /* disabled */
-
    /* pipeline */
-   if (restart_int("pipeline", config->pipeline, reload->pipeline))
-   {
-      changed = true;
-   }
-
+   config->pipeline = reload->pipeline;
    config->failover = reload->failover;
    memcpy(config->failover_script, reload->failover_script, MISC_LENGTH);
    memcpy(config->failover_notify_script, reload->failover_notify_script, MISC_LENGTH);
 
    /* log_type */
-   if (restart_int("log_type", config->common.log_type, reload->common.log_type))
-   {
-      changed = true;
-   }
+   config->common.log_type = reload->common.log_type;
    config->common.log_level = reload->common.log_level;
 
    /* log_path */
-   // if the log main parameters have changed, we need
-   // to restart the logging system
-   if (strncmp(config->common.log_path, reload->common.log_path, MISC_LENGTH) || config->common.log_rotation_size != reload->common.log_rotation_size || config->common.log_rotation_age.s != reload->common.log_rotation_age.s || config->common.log_mode != reload->common.log_mode)
+   if (strncmp(config->common.log_path, reload->common.log_path, MISC_LENGTH) ||
+       config->common.log_rotation_size != reload->common.log_rotation_size ||
+       config->common.log_rotation_age.s != reload->common.log_rotation_age.s ||
+       config->common.log_mode != reload->common.log_mode)
    {
       pgagroal_log_debug("Log restart triggered!");
       pgagroal_stop_logging();
@@ -3620,9 +3721,6 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
 
    config->common.log_connections = reload->common.log_connections;
    config->common.log_disconnections = reload->common.log_disconnections;
-
-   /* log_lock */
-
    config->authquery = reload->authquery;
 
    config->common.tls = reload->common.tls;
@@ -3639,163 +3737,51 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
       }
    }
 
-   /* active_connections */
-   /* max_connections */
-   if (restart_int("max_connections", config->max_connections, reload->max_connections))
-   {
-      changed = true;
-   }
+   config->max_connections = reload->max_connections;
    config->allow_unknown_users = reload->allow_unknown_users;
-
-   if (restart_time("blocking_timeout", config->blocking_timeout, reload->blocking_timeout, false))
-   {
-      changed = true;
-   }
-
    memcpy(&config->blocking_timeout, &reload->blocking_timeout, sizeof(config->blocking_timeout));
-
-   if (restart_time("idle_timeout", config->idle_timeout, reload->idle_timeout, false))
-   {
-      changed = true;
-   }
-
    memcpy(&config->idle_timeout, &reload->idle_timeout, sizeof(config->idle_timeout));
-
-   if (restart_time("rotate_frontend_password_timeout", config->rotate_frontend_password_timeout, reload->rotate_frontend_password_timeout, false))
-   {
-      changed = true;
-   }
-
    memcpy(&config->rotate_frontend_password_timeout, &reload->rotate_frontend_password_timeout, sizeof(config->rotate_frontend_password_timeout));
-
    config->rotate_frontend_password_length = reload->rotate_frontend_password_length;
-
-   if (restart_time("max_connection_age", config->max_connection_age, reload->max_connection_age, false))
-   {
-      changed = true;
-   }
-
    memcpy(&config->max_connection_age, &reload->max_connection_age, sizeof(config->max_connection_age));
-
    config->validation = reload->validation;
-
-   if (restart_time("background_interval", config->background_interval, reload->background_interval, false))
-   {
-      changed = true;
-   }
-
    memcpy(&config->background_interval, &reload->background_interval, sizeof(config->background_interval));
-
    config->max_retries = reload->max_retries;
-
-   if (restart_time("authentication_timeout", config->common.authentication_timeout, reload->common.authentication_timeout, false))
-   {
-      changed = true;
-   }
-
    memcpy(&config->common.authentication_timeout, &reload->common.authentication_timeout, sizeof(config->common.authentication_timeout));
-
    config->disconnect_client = reload->disconnect_client;
    config->disconnect_client_force = reload->disconnect_client_force;
 
    /* Health Check */
-   if (restart_bool("health_check", config->health_check, reload->health_check))
-   {
-      reset_server_failures();
-      changed = true;
-   }
-
-   if (restart_time("health_check_period", config->health_check_period, reload->health_check_period, true))
-   {
-      reset_server_failures();
-      changed = true;
-   }
-
-   if (restart_time("health_check_timeout", config->health_check_timeout, reload->health_check_timeout, true))
-   {
-      reset_server_failures();
-      changed = true;
-   }
-
    config->health_check = reload->health_check;
    memcpy(&config->health_check_period, &reload->health_check_period, sizeof(config->health_check_period));
    memcpy(&config->health_check_timeout, &reload->health_check_timeout, sizeof(config->health_check_timeout));
-
-   if (restart_string("health_check_user", config->health_check_user, reload->health_check_user, true))
-   {
-      reset_server_failures();
-      changed = true;
-   }
-
    memcpy(config->health_check_user, reload->health_check_user, MAX_USERNAME_LENGTH);
 
    config->startup_validation = reload->startup_validation;
-
-   /* pidfile */
-   if (restart_string("pidfile", config->pidfile, reload->pidfile, true))
-   {
-      changed = true;
-   }
-
-   /* event backend */
-   if (restart_int("ev_backend", config->ev_backend, reload->ev_backend))
-   {
-      changed = true;
-   }
-
+   memcpy(config->pidfile, reload->pidfile, MAX_PATH);
+   config->ev_backend = reload->ev_backend;
    config->keep_alive = reload->keep_alive;
    config->nodelay = reload->nodelay;
    config->backlog = reload->backlog;
-
-   /* hugepage */
-   if (restart_int("hugepage", config->common.hugepage, reload->common.hugepage))
-   {
-      changed = true;
-   }
+   config->common.hugepage = reload->common.hugepage;
    config->tracker = reload->tracker;
    config->track_prepared_statements = reload->track_prepared_statements;
+   memcpy(config->unix_socket_dir, reload->unix_socket_dir, MISC_LENGTH);
 
-   /* unix_socket_dir */
-
-   // does make sense to check for remote connections? Because in the case the Unix socket dir
-   // changes the pgagroal-cli probably will not be able to connect in any case!
-   if (restart_string("unix_socket_dir", config->unix_socket_dir, reload->unix_socket_dir, false))
-   {
-      changed = true;
-   }
-
-   /* su_connection */
-
-   /* states */
-
-   // decreasing the number of servers is probably a bad idea
-   if (config->number_of_servers > reload->number_of_servers)
-   {
-      if (restart_int("decreasing number of servers", config->number_of_servers, reload->number_of_servers))
-      {
-         changed = true;
-      }
-   }
-
+   /* Servers */
    for (int i = 0; i < reload->number_of_servers; i++)
    {
-      // check and emit restart warning only for not-added servers
-      if (i < config->number_of_servers)
-      {
-         if (restart_server(&reload->servers[i], &config->servers[i]))
-         {
-            changed = true;
-         }
-      }
-
       copy_server(&config->servers[i], &reload->servers[i]);
    }
    config->number_of_servers = reload->number_of_servers;
+   memset(&config->servers[config->number_of_servers], 0, sizeof(struct server) * (NUMBER_OF_SERVERS - config->number_of_servers));
 
-   // zero fill remaining memory that is unused
-   memset(&config->servers[config->number_of_servers], 0,
-          sizeof(struct server) * (NUMBER_OF_SERVERS - config->number_of_servers));
+   if (reset_health)
+   {
+      reset_health_check_state(config);
+   }
 
+   /* HBAs */
    memset(&config->hbas[0], 0, sizeof(struct hba) * NUMBER_OF_HBAS);
    for (int i = 0; i < reload->number_of_hbas; i++)
    {
@@ -3803,31 +3789,15 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    }
    config->number_of_hbas = reload->number_of_hbas;
 
-   /* number_of_limits */
-   /* limits */
-   if (restart_limit("limits", config, reload))
+   /* Limits */
+   memset(&config->limits[0], 0, sizeof(struct limit) * NUMBER_OF_LIMITS);
+   for (int i = 0; i < reload->number_of_limits; i++)
    {
-      changed = true;
+      copy_limit(&config->limits[i], &reload->limits[i]);
    }
-   else
-   {
-      // Successful reload - copy all limit configurations including aliases
-      for (int i = 0; i < reload->number_of_limits; i++)
-      {
-         copy_limit(&config->limits[i], &reload->limits[i]);
+   config->number_of_limits = reload->number_of_limits;
 
-         // Log alias changes for debugging
-         if (config->limits[i].aliases_count != reload->limits[i].aliases_count)
-         {
-            pgagroal_log_debug("Reloaded aliases for database '%s': count changed from %d to %d",
-                               config->limits[i].database,
-                               config->limits[i].aliases_count,
-                               reload->limits[i].aliases_count);
-         }
-      }
-      config->number_of_limits = reload->number_of_limits;
-   }
-
+   /* Users */
    memset(&config->users[0], 0, sizeof(struct user) * NUMBER_OF_USERS);
    for (int i = 0; i < reload->number_of_users; i++)
    {
@@ -3835,6 +3805,7 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    }
    config->number_of_users = reload->number_of_users;
 
+   /* Frontend Users */
    memset(&config->frontend_users[0], 0, sizeof(struct user) * NUMBER_OF_USERS);
    for (int i = 0; i < reload->number_of_frontend_users; i++)
    {
@@ -3842,6 +3813,7 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    }
    config->number_of_frontend_users = reload->number_of_frontend_users;
 
+   /* Admins */
    memset(&config->admins[0], 0, sizeof(struct user) * NUMBER_OF_ADMINS);
    for (int i = 0; i < reload->number_of_admins; i++)
    {
@@ -3849,25 +3821,15 @@ transfer_configuration(struct main_configuration* config, struct main_configurat
    }
    config->number_of_admins = reload->number_of_admins;
 
+   /* Superuser */
    memset(&config->superuser, 0, sizeof(struct user));
    copy_user(&config->superuser, &reload->superuser);
-
-   /* Runtime revalidation: check for duplicate system identifiers after reload */
-   pgagroal_check_server_identifiers(false);
-
-   /* prometheus */
-   /* connections[] */
 
 #ifdef HAVE_SYSTEMD
    sd_notify(0, "READY=1");
 #endif
 
-   if (changed)
-   {
-      pgagroal_log_warn("Settings cannot be applied");
-   }
-
-   return changed;
+   return false;
 }
 
 /**
@@ -4022,21 +3984,42 @@ static void
 copy_server(struct server* dst, struct server* src)
 {
    atomic_schar state;
+   atomic_schar health_state;
+   atomic_schar auth_type;
+   unsigned int failures;
+   int version;
+   int minor_version;
+   char system_identifier[sizeof(dst->system_identifier)];
 
    // check the server cloned "seems" the same
    if (is_same_server(dst, src))
    {
       state = atomic_load(&dst->state);
+      health_state = atomic_load(&dst->health_state);
+      auth_type = atomic_load(&dst->auth_type);
+      failures = dst->failures;
+      version = dst->version;
+      minor_version = dst->minor_version;
+      memcpy(system_identifier, dst->system_identifier, sizeof(system_identifier));
    }
    else
    {
       state = SERVER_NOTINIT;
+      health_state = SERVER_HEALTH_UNKNOWN;
+      auth_type = HEALTH_CHECK_AUTH_UNKNOWN;
+      failures = 0;
+      version = 0;
+      minor_version = 0;
+      memset(system_identifier, 0, sizeof(system_identifier));
    }
 
    memset(dst, 0, sizeof(struct server));
    memcpy(&dst->name[0], &src->name[0], MISC_LENGTH);
    memcpy(&dst->host[0], &src->host[0], MISC_LENGTH);
    dst->port = src->port;
+   dst->version = version;
+   dst->minor_version = minor_version;
+   memcpy(&dst->system_identifier[0], system_identifier, sizeof(dst->system_identifier));
    dst->tls = src->tls;
    memcpy(&dst->tls_cert_file[0], &src->tls_cert_file[0], MAX_PATH);
    memcpy(&dst->tls_key_file[0], &src->tls_key_file[0], MAX_PATH);
@@ -4045,6 +4028,10 @@ copy_server(struct server* dst, struct server* src)
    dst->valid = src->valid;
 
    atomic_init(&dst->state, state);
+   atomic_init(&dst->health_state, health_state);
+   dst->failures = failures;
+   atomic_init(&dst->auth_type, auth_type);
+   dst->lineno = src->lineno;
 }
 
 static void
@@ -4069,31 +4056,8 @@ restart_int(char* name, int e, int n)
 {
    if (e != n)
    {
-      pgagroal_log_info("Restart required for %s - Existing %d New %d", name, e, n);
+      pgagroal_log_warn("Restart required for %s - Existing %d New %d", name, e, n);
       return 1;
-   }
-
-   return 0;
-}
-
-static int
-restart_time(char* name, pgagroal_time_t e, pgagroal_time_t n, bool requires_restart)
-{
-   int64_t old_time = pgagroal_time_convert(e, FORMAT_TIME_S);
-   int64_t new_time = pgagroal_time_convert(n, FORMAT_TIME_S);
-
-   if (old_time != new_time)
-   {
-      if (requires_restart)
-      {
-         pgagroal_log_info("Restart required for %s - Existing %" PRId64 " New %" PRId64, name, old_time, new_time);
-         return 1;
-      }
-      else
-      {
-         pgagroal_log_debug("Reloaded %s - Existing %" PRId64 " New %" PRId64, name, old_time, new_time);
-         return 0;
-      }
    }
 
    return 0;
@@ -4108,7 +4072,7 @@ restart_bool(char* name, bool e, bool n)
 {
    if (e != n)
    {
-      pgagroal_log_info("Restart required for %s - Existing %s New %s", name, e ? "true" : "false", n ? "true" : "false");
+      pgagroal_log_warn("Restart required for %s - Existing %s New %s", name, e ? "true" : "false", n ? "true" : "false");
       return 1;
    }
 
@@ -4138,7 +4102,7 @@ restart_string(char* name, char* e, char* n, bool skip_non_existing)
 
    if (strcmp(e, n))
    {
-      pgagroal_log_info("Restart required for %s - Existing %s New %s", name, e, n);
+      pgagroal_log_warn("Restart required for %s - Existing %s New %s", name, e, n);
       return 1;
    }
 
@@ -4170,7 +4134,7 @@ restart_limit(char* name __attribute__((unused)), struct main_configuration* con
           e->initial_size != n->initial_size ||
           e->min_size != n->min_size)
       {
-         pgagroal_log_info("Restart required for limits");
+         pgagroal_log_warn("Restart required for limits");
          goto error;
       }
 
@@ -4226,6 +4190,51 @@ restart_server(struct server* src, struct server* dst)
    }
 
    return 0;
+}
+
+/**
+ * Checks if health check settings differ between two configurations.
+ * Used during transfer_configuration to decide whether to reset server
+ * health state (failures, health_state, auth_type) and to inform callers
+ * via the health_check_changed output parameter.
+ */
+static bool
+health_check_settings_changed(struct main_configuration* config, struct main_configuration* reload)
+{
+   if (config->health_check != reload->health_check)
+   {
+      return true;
+   }
+
+   if (pgagroal_time_convert(config->health_check_period, FORMAT_TIME_S) !=
+       pgagroal_time_convert(reload->health_check_period, FORMAT_TIME_S))
+   {
+      return true;
+   }
+
+   if (pgagroal_time_convert(config->health_check_timeout, FORMAT_TIME_S) !=
+       pgagroal_time_convert(reload->health_check_timeout, FORMAT_TIME_S))
+   {
+      return true;
+   }
+
+   if (strcmp(config->health_check_user, reload->health_check_user))
+   {
+      return true;
+   }
+
+   return false;
+}
+
+static void
+reset_health_check_state(struct main_configuration* config)
+{
+   for (int i = 0; i < config->number_of_servers; i++)
+   {
+      config->servers[i].failures = 0;
+      atomic_store(&config->servers[i].health_state, SERVER_HEALTH_UNKNOWN);
+      atomic_store(&config->servers[i].auth_type, HEALTH_CHECK_AUTH_UNKNOWN);
+   }
 }
 
 static bool
@@ -5693,6 +5702,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
 
    if (key_in_section("host", section, key, true, NULL))
    {
+      memset(config->common.host, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -5702,12 +5712,15 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("host", section, key, false, &unknown))
    {
+      memset(&srv->name, 0, MISC_LENGTH);
       max = strlen(section);
       if (max > MISC_LENGTH - 1)
       {
          max = MISC_LENGTH - 1;
       }
       memcpy(&srv->name, section, max);
+
+      memset(&srv->host, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -5725,6 +5738,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("port", section, key, false, &unknown))
    {
+      memset(&srv->name, 0, MISC_LENGTH);
       memcpy(&srv->name, section, strlen(section));
       if (as_int(value, &srv->port))
       {
@@ -5757,6 +5771,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("metrics_ca_file", section, key, true, NULL))
    {
+      memset(config->common.metrics_ca_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5766,6 +5781,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("metrics_cert_file", section, key, true, NULL))
    {
+      memset(config->common.metrics_cert_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5775,6 +5791,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("metrics_key_file", section, key, true, NULL))
    {
+      memset(config->common.metrics_key_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5826,6 +5843,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("failover_script", section, key, true, &unknown))
    {
+      memset(config->failover_script, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -5835,6 +5853,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("failover_notify_script", section, key, true, &unknown))
    {
+      memset(config->failover_notify_script, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -5868,6 +5887,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("tls_ca_file", section, key, true, NULL))
    {
+      memset(config->common.tls_ca_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5877,6 +5897,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("tls_ca_file", section, key, false, &unknown))
    {
+      memset(srv->tls_ca_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5886,6 +5907,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("tls_cert_file", section, key, true, NULL))
    {
+      memset(config->common.tls_cert_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5895,6 +5917,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("tls_cert_file", section, key, false, &unknown))
    {
+      memset(srv->tls_cert_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5904,6 +5927,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("tls_key_file", section, key, true, NULL))
    {
+      memset(config->common.tls_key_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -5913,6 +5937,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("tls_key_file", section, key, false, &unknown))
    {
+      memset(srv->tls_key_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6037,10 +6062,11 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("pidfile", section, key, true, &unknown))
    {
+      memset(config->pidfile, 0, MAX_PATH);
       max = strlen(value);
-      if (max > MISC_LENGTH - 1)
+      if (max > MAX_PATH - 1)
       {
-         max = MISC_LENGTH - 1;
+         max = MAX_PATH - 1;
       }
       memcpy(config->pidfile, value, max);
    }
@@ -6064,6 +6090,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("log_path", section, key, true, &unknown))
    {
+      memset(config->common.log_path, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -6087,6 +6114,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("log_line_prefix", section, key, true, &unknown))
    {
+      memset(config->common.log_line_prefix, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -6125,6 +6153,7 @@ pgagroal_apply_main_configuration(struct main_configuration* config,
    }
    else if (key_in_section("unix_socket_dir", section, key, true, &unknown))
    {
+      memset(config->unix_socket_dir, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -6214,6 +6243,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
 
    if (key_in_section("host", section, key, true, NULL))
    {
+      memset(config->common.host, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -6223,12 +6253,15 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("host", section, key, false, &unknown))
    {
+      memset(&srv->server.name, 0, MISC_LENGTH);
       max = strlen(section);
       if (max > MISC_LENGTH - 1)
       {
          max = MISC_LENGTH - 1;
       }
       memcpy(&srv->server.name, section, max);
+
+      memset(&srv->server.host, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -6245,6 +6278,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("port", section, key, false, &unknown))
    {
+      memset(&srv->server.name, 0, MISC_LENGTH);
       memcpy(&srv->server.name, section, strlen(section));
       if (as_int(value, &srv->server.port))
       {
@@ -6257,6 +6291,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("user", section, key, false, &unknown))
    {
+      memset(&srv->user.username, 0, MISC_LENGTH);
       max = strlen(value);
       if (max > MISC_LENGTH - 1)
       {
@@ -6273,6 +6308,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("tls_ca_file", section, key, true, &unknown))
    {
+      memset(config->common.tls_ca_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6282,6 +6318,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("tls_cert_file", section, key, true, &unknown))
    {
+      memset(config->common.tls_cert_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6291,6 +6328,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("tls_key_file", section, key, true, &unknown))
    {
+      memset(config->common.tls_key_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6322,6 +6360,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("metrics_ca_file", section, key, true, &unknown))
    {
+      memset(config->common.metrics_ca_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6331,6 +6370,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("metrics_cert_file", section, key, true, &unknown))
    {
+      memset(config->common.metrics_cert_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6340,6 +6380,7 @@ pgagroal_apply_vault_configuration(struct vault_configuration* config,
    }
    else if (key_in_section("metrics_key_file", section, key, true, &unknown))
    {
+      memset(config->common.metrics_key_file, 0, MAX_PATH);
       max = strlen(value);
       if (max > MAX_PATH - 1)
       {
@@ -6553,8 +6594,11 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
       goto error;
    }
 
-   // Check if restart is required
-   *restart_required = transfer_configuration(current_config, temp_config);
+   /* transfer_configuration internally calls check_restart_required and
+    * returns true if a restart is needed (no changes applied in that case).
+    * When restart is not required, it applies all changes to the running config.
+    */
+   *restart_required = transfer_configuration(current_config, temp_config, NULL);
 
    if (*restart_required)
    {
@@ -6562,10 +6606,8 @@ pgagroal_apply_configuration(char* config_key, char* config_value,
    }
    else
    {
-      // Apply the changes for real
-      transfer_configuration(current_config, temp_config);
       pgagroal_log_info("Configuration change %s = %s applied successfully", config_key, config_value);
-      // Update certificate metrics after successful reload
+      /* Update certificate metrics after successful reload */
       if (current_config->common.metrics > 0)
       {
          if (pgagroal_update_main_certificate_metrics(current_config))
@@ -7059,7 +7101,7 @@ pgagroal_conf_set(SSL* ssl __attribute__((unused)), int client_fd, uint8_t compr
    if (!is_valid_config_key(config_key, &key_info))
    {
       pgagroal_management_response_error(NULL, client_fd, NULL, MANAGEMENT_ERROR_CONF_SET_ERROR, compression, encryption, payload);
-      pgagroal_log_error("Conf Set: Invalid config key format: %s", config_key);
+      pgagroal_log_error("Conf Set: Invalid config key: %s", config_key);
       goto error;
    }
 
@@ -7136,10 +7178,6 @@ pgagroal_conf_set(SSL* ssl __attribute__((unused)), int client_fd, uint8_t compr
    // Clean up memory
    free(elapsed);
 
-   pgagroal_disconnect(client_fd);
-   pgagroal_memory_destroy();
-   pgagroal_stop_logging();
-
    return;
 
 error:
@@ -7148,10 +7186,6 @@ error:
    {
       free(elapsed);
    }
-
-   pgagroal_disconnect(client_fd);
-   pgagroal_memory_destroy();
-   pgagroal_stop_logging();
 
    return;
 }
@@ -7310,7 +7344,7 @@ is_valid_config_key(const char* config_key, struct config_key_info* key_info)
          }
          if (!hba_found)
          {
-            pgagroal_log_debug("HBA user '%s' not found in configuration", key_info->context);
+            pgagroal_log_error("HBA user '%s' not found in configuration", key_info->context);
             return false;
          }
       }
@@ -7375,15 +7409,4 @@ pgagroal_is_binary_file(const char* path)
 
 error:
    return true;
-}
-
-static void
-reset_server_failures(void)
-{
-   struct main_configuration* config = (struct main_configuration*)shmem;
-
-   FOREACH_VALID_SERVER
-   {
-      config->servers[i].failures = 0;
-   }
 }

@@ -177,7 +177,7 @@ extern "C" {
 #define CONFIGURATION_RESPONSE_NEW_VALUE        "new_value"
 #define CONFIGURATION_RESPONSE_RESTART_REQUIRED "restart_required"
 #define CONFIGURATION_STATUS_SUCCESS            "success"
-#define CONFIGURATION_STATUS_RESTART_REQUIRED   "success_restart_required"
+#define CONFIGURATION_STATUS_RESTART_REQUIRED   "restart_required"
 #define CONFIGURATION_MESSAGE_SUCCESS           "Configuration change applied successfully"
 #define CONFIGURATION_MESSAGE_RESTART_REQUIRED  "Configuration change requires restart. Current values preserved."
 
@@ -423,10 +423,11 @@ pgagroal_validate_superuser_configuration(void* shmem);
 /**
  * Reload the configuration
  * @param reload Should the server be reloaded
+ * @param health_check_changed Set to true if health check settings changed during reload
  * @return 0 upon success, otherwise 1
  */
 int
-pgagroal_reload_configuration(bool* reload);
+pgagroal_reload_configuration(bool* reload, bool* health_check_changed);
 
 /**
  * Automatically initialize the 'pidfile'
