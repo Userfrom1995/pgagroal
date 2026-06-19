@@ -1755,7 +1755,7 @@ accept_mgt_cb(struct io_watcher* watcher)
       pgagroal_management_create_response(payload, -1, &res);
       pgagroal_json_create(&databases);
 
-      if (!strcmp("*", database))
+      if (!strcmp("all", database))
       {
          struct json* js = NULL;
 
@@ -1818,7 +1818,7 @@ accept_mgt_cb(struct io_watcher* watcher)
 
       config->all_disabled = false;
 
-      if (!strcmp("*", database))
+      if (!strcmp("*", database) || !strcmp("all", database))
       {
          struct json* js = NULL;
 

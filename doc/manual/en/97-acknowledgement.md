@@ -45,6 +45,7 @@ Frank Heikens <frank@elevarq.com>
 Sakshi Aggarwal <sakshiaggarwal2706@gmail.com>
 Ameen Sakr <ameensakr623@gmail.com>
 Abdallah Hany Ragab <abdallah.hany1974@gmail.com>
+Rohan Mishra <kmrrohan29@gmail.com>
 ```
 
 ## Committers

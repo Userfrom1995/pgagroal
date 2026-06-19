@@ -75,18 +75,18 @@ silently ignored for the `idle` and `all` modes.
 
 Command:
 ```
-pgagroal-cli flush [gracefully|idle|all] [*|<database>]
-pgagroal-cli flush [gracefully] [*|<database>] --timeout <DURATION>
+pgagroal-cli flush [gracefully|idle|all] [all|<database>]
+pgagroal-cli flush [gracefully] [all|<database>] --timeout <DURATION>
 ```
 
 Examples:
 ```
-pgagroal-cli flush                                  # pgagroal-cli flush gracefully '*'
-pgagroal-cli flush idle                             # pgagroal-cli flush idle '*'
-pgagroal-cli flush all                              # pgagroal-cli flush all '*'
+pgagroal-cli flush                                  # pgagroal-cli flush gracefully 'all'
+pgagroal-cli flush idle                             # pgagroal-cli flush idle 'all'
+pgagroal-cli flush all                              # pgagroal-cli flush all 'all'
 pgagroal-cli flush pgbench                          # pgagroal-cli flush gracefully pgbench
-pgagroal-cli flush --timeout 30                     # graceful, escalate to 'flush all *' after 30s
-pgagroal-cli flush --timeout 5m                     # graceful, escalate to 'flush all *' after 5 minutes
+pgagroal-cli flush --timeout 30                     # graceful, escalate to 'flush all' after 30s
+pgagroal-cli flush --timeout 5m                     # graceful, escalate to 'flush all' after 5 minutes
 pgagroal-cli flush gracefully pgbench --timeout 1h  # graceful, escalate to 'flush all pgbench' after 1 hour
 ```
 
@@ -113,7 +113,7 @@ Enables a database (or all databases).
 
 Command:
 ```
-pgagroal-cli enable [<database>|*]
+pgagroal-cli enable [<database>|all]
 ```
 
 Example:
@@ -126,7 +126,7 @@ Disables a database (or all databases).
 
 Command:
 ```
-pgagroal-cli disable [<database>|*]
+pgagroal-cli disable [<database>|all]
 ```
 
 Example:

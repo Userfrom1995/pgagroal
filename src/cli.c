@@ -132,7 +132,7 @@ const struct pgagroal_command command_table[] = {
       .accepted_argument_count = {0, 1},
       .action = MANAGEMENT_FLUSH,
       .mode = FLUSH_GRACEFULLY,
-      .default_argument = "*",
+      .default_argument = "all",
       .deprecated = false,
       .log_message = "<flush gracefully> [%s]",
    },
@@ -149,7 +149,7 @@ const struct pgagroal_command command_table[] = {
       .subcommand = "",
       .accepted_argument_count = {0, 1},
       .action = MANAGEMENT_ENABLEDB,
-      .default_argument = "*",
+      .default_argument = "all",
       .deprecated = false,
       .log_message = "<enable> [%s]",
    },
@@ -158,7 +158,7 @@ const struct pgagroal_command command_table[] = {
       .subcommand = "",
       .accepted_argument_count = {0, 1},
       .action = MANAGEMENT_DISABLEDB,
-      .default_argument = "*",
+      .default_argument = "all",
       .deprecated = false,
       .log_message = "<disable> [%s]",
    },
@@ -273,7 +273,7 @@ const struct pgagroal_command command_table[] = {
       .accepted_argument_count = {0, 1},
       .action = MANAGEMENT_FLUSH,
       .mode = FLUSH_IDLE,
-      .default_argument = "*",
+      .default_argument = "all",
       .deprecated = false,
       .log_message = "<flush idle> [%s]",
    },
@@ -283,7 +283,7 @@ const struct pgagroal_command command_table[] = {
       .accepted_argument_count = {0, 1},
       .action = MANAGEMENT_FLUSH,
       .mode = FLUSH_GRACEFULLY,
-      .default_argument = "*",
+      .default_argument = "all",
       .deprecated = false,
       .log_message = "<flush gracefully> [%s]",
    },
@@ -293,7 +293,7 @@ const struct pgagroal_command command_table[] = {
       .accepted_argument_count = {0, 1},
       .action = MANAGEMENT_FLUSH,
       .mode = FLUSH_ALL,
-      .default_argument = "*",
+      .default_argument = "all",
       .deprecated = false,
       .log_message = "<flush all> [%s]",
    },
@@ -931,14 +931,14 @@ static void
 help_disabledb(void)
 {
    printf("Disable a database\n");
-   printf("  pgagroal-cli disabledb <database>|*\n");
+   printf("  pgagroal-cli disabledb <database>|all\n");
 }
 
 static void
 help_enabledb(void)
 {
    printf("Enable a database\n");
-   printf("  pgagroal-cli enabledb <database>|*\n");
+   printf("  pgagroal-cli enabledb <database>|all\n");
 }
 
 static void
@@ -963,8 +963,8 @@ static void
 help_flush(void)
 {
    printf("Flush connections\n");
-   printf("  pgagroal-cli flush [gracefully|idle|all] [*|<database>]\n");
-   printf("  pgagroal-cli flush [gracefully] [*|<database>] --timeout <DURATION>\n");
+   printf("  pgagroal-cli flush [gracefully|idle|all] [all|<database>]\n");
+   printf("  pgagroal-cli flush [gracefully] [all|<database>] --timeout <DURATION>\n");
    printf("    '--timeout' bounds a graceful flush; DURATION overrides 'flush_timeout' from pgagroal.conf.\n");
    printf("    DURATION is a non-negative number with an optional unit suffix: s (seconds, default), m (minutes),\n");
    printf("    h (hours), d (days), w (weeks); e.g. '30', '30s', '5m', '1h', '2d', '1w'.\n");

@@ -1008,7 +1008,7 @@ pgagroal_flush(int mode, char* database)
       {
          bool consider = false;
 
-         if (!strcmp(database, "*") || !strcmp(config->connections[i].database, database))
+         if (!strcmp(database, "all") || !strcmp(config->connections[i].database, database))
          {
             consider = true;
          }
