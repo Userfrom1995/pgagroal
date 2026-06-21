@@ -37,6 +37,7 @@
 #include <network.h>
 #include <security.h>
 #include <shmem.h>
+#include <tls.h>
 #include <utils.h>
 #include <prometheus.h>
 #include <utf8.h>

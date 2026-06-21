@@ -37,6 +37,7 @@
 #include <prometheus.h>
 #include <security.h>
 #include <server.h>
+#include <tls.h>
 #include <tracker.h>
 #include <utils.h>
 #include <utf8.h>
@@ -134,7 +135,6 @@ static int server_signature(char* password, char* salt, int salt_length, int ite
                             unsigned char** result, size_t* result_length);
 
 static bool is_tls_user(char* username, char* database);
-static int create_ssl_client(SSL_CTX* ctx, char* key, char* cert, char* root, int socket, SSL** ssl);
 static int establish_client_tls_connection(int server, int fd, SSL** ssl);
 static int create_client_tls_connection(int fd, SSL** ssl, char* tls_key_file, char* tls_cert_file, char* tls_ca_file);
 
@@ -258,7 +258,9 @@ pgagroal_authenticate(int client_fd, char* address, int* slot, SSL** client_ssl,
             goto error;
          }
 
-         if (pgagroal_create_ssl_server(ctx, config->common.tls_key_file, config->common.tls_cert_file, config->common.tls_ca_file, client_fd, &c_ssl))
+         struct tls* c_tls = NULL;
+
+         if (pgagroal_tls_create_server(ctx, config->common.tls_key_file, config->common.tls_cert_file, config->common.tls_ca_file, &c_tls))
          {
             pgagroal_log_debug("authenticate: connection error");
             pgagroal_write_connection_refused(NULL, client_fd);
@@ -266,6 +268,8 @@ pgagroal_authenticate(int client_fd, char* address, int* slot, SSL** client_ssl,
             goto error;
          }
 
+         pgagroal_tls_set_fd(c_tls, client_fd);
+         c_ssl = c_tls->ssl;
          *client_ssl = c_ssl;
 
          /* Switch to TLS mode */
@@ -276,8 +280,8 @@ pgagroal_authenticate(int client_fd, char* address, int* slot, SSL** client_ssl,
          }
          pgagroal_clear_message(msg);
 
-         status = SSL_accept(c_ssl);
-         if (status != 1)
+         /* Drive the handshake through the socket shim (memory BIOs) */
+         if (pgagroal_tls_socket_handshake(c_tls, client_fd) != PGAGROAL_TLS_OK)
          {
             unsigned long err;
 
@@ -943,7 +947,7 @@ pgagroal_remote_management_scram_sha256(char* username, char* password, int serv
                      memset(&root_file, 0, sizeof(root_file));
                   }
 
-                  if (create_ssl_client(ctx, &key_file[0], &cert_file[0], &root_file[0], server_fd, &ssl))
+                  if (pgagroal_create_ssl_client(ctx, &key_file[0], &cert_file[0], &root_file[0], server_fd, &ssl))
                   {
                      goto error;
                   }
@@ -4325,244 +4329,6 @@ is_tls_user(char* username, char* database)
    return false;
 }
 
-int
-pgagroal_create_ssl_ctx(bool client, SSL_CTX** ctx)
-{
-   SSL_CTX* c = NULL;
-
-   if (client)
-   {
-      c = SSL_CTX_new(TLS_client_method());
-   }
-   else
-   {
-      c = SSL_CTX_new(TLS_server_method());
-   }
-
-   if (c == NULL)
-   {
-      goto error;
-   }
-
-   if (SSL_CTX_set_min_proto_version(c, TLS1_2_VERSION) == 0)
-   {
-      goto error;
-   }
-
-   SSL_CTX_set_mode(c, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-   SSL_CTX_set_options(c, SSL_OP_NO_TICKET);
-   SSL_CTX_set_session_cache_mode(c, SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
-
-   *ctx = c;
-
-   return 0;
-
-error:
-
-   if (c != NULL)
-   {
-      SSL_CTX_free(c);
-   }
-
-   return 1;
-}
-
-static int
-create_ssl_client(SSL_CTX* ctx, char* key, char* cert, char* root, int socket, SSL** ssl)
-{
-   SSL* s = NULL;
-   bool have_cert = false;
-   bool have_rootcert = false;
-
-   if (root != NULL && strlen(root) > 0)
-   {
-      if (SSL_CTX_load_verify_locations(ctx, root, NULL) != 1)
-      {
-         unsigned long err;
-
-         err = ERR_get_error();
-         pgagroal_log_error("Couldn't load TLS CA: %s", root);
-         pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-         goto error;
-      }
-
-      have_rootcert = true;
-   }
-
-   if (cert != NULL && strlen(cert) > 0)
-   {
-      if (SSL_CTX_use_certificate_chain_file(ctx, cert) != 1)
-      {
-         unsigned long err;
-
-         err = ERR_get_error();
-         pgagroal_log_error("Couldn't load TLS certificate: %s", cert);
-         pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-         goto error;
-      }
-
-      have_cert = true;
-   }
-
-   s = SSL_new(ctx);
-
-   if (s == NULL)
-   {
-      goto error;
-   }
-
-   if (SSL_set_fd(s, socket) == 0)
-   {
-      goto error;
-   }
-
-   if (have_cert && key != NULL && strlen(key) > 0)
-   {
-      if (SSL_use_PrivateKey_file(s, key, SSL_FILETYPE_PEM) != 1)
-      {
-         unsigned long err;
-
-         err = ERR_get_error();
-         pgagroal_log_error("Couldn't load TLS private key: %s", key);
-         pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-         goto error;
-      }
-
-      if (SSL_check_private_key(s) != 1)
-      {
-         unsigned long err;
-
-         err = ERR_get_error();
-         pgagroal_log_error("TLS private key check failed: %s", key);
-         pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-         goto error;
-      }
-   }
-
-   if (have_rootcert)
-   {
-      SSL_set_verify(s, SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE, NULL);
-   }
-
-   *ssl = s;
-
-   return 0;
-
-error:
-
-   if (s != NULL)
-   {
-      SSL_shutdown(s);
-      SSL_free(s);
-   }
-   SSL_CTX_free(ctx);
-
-   return 1;
-}
-
-int
-pgagroal_create_ssl_server(SSL_CTX* ctx, char* key_file, char* cert_file, char* ca_file, int socket, SSL** ssl)
-{
-   SSL* s = NULL;
-   STACK_OF(X509_NAME)* root_cert_list = NULL;
-
-   if (strlen(cert_file) == 0)
-   {
-      pgagroal_log_error("No TLS certificate defined");
-      goto error;
-   }
-
-   if (strlen(key_file) == 0)
-   {
-      pgagroal_log_error("No TLS private key defined");
-      goto error;
-   }
-
-   if (SSL_CTX_use_certificate_chain_file(ctx, cert_file) != 1)
-   {
-      unsigned long err;
-
-      err = ERR_get_error();
-      pgagroal_log_error("Couldn't load TLS certificate: %s", cert_file);
-      pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-      goto error;
-   }
-
-   if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) != 1)
-   {
-      unsigned long err;
-
-      err = ERR_get_error();
-      pgagroal_log_error("Couldn't load TLS private key: %s", key_file);
-      pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-      goto error;
-   }
-
-   if (SSL_CTX_check_private_key(ctx) != 1)
-   {
-      unsigned long err;
-
-      err = ERR_get_error();
-      pgagroal_log_error("TLS private key check failed: %s", key_file);
-      pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-      goto error;
-   }
-
-   if (strlen(ca_file) > 0)
-   {
-      if (SSL_CTX_load_verify_locations(ctx, ca_file, NULL) != 1)
-      {
-         unsigned long err;
-
-         err = ERR_get_error();
-         pgagroal_log_error("Couldn't load TLS CA: %s", ca_file);
-         pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-         goto error;
-      }
-
-      root_cert_list = SSL_load_client_CA_file(ca_file);
-      if (root_cert_list == NULL)
-      {
-         unsigned long err;
-
-         err = ERR_get_error();
-         pgagroal_log_error("Couldn't load TLS CA: %s", ca_file);
-         pgagroal_log_error("Reason: %s", ERR_reason_error_string(err));
-         goto error;
-      }
-
-      SSL_CTX_set_verify(ctx, (SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE), NULL);
-      SSL_CTX_set_client_CA_list(ctx, root_cert_list);
-   }
-
-   s = SSL_new(ctx);
-
-   if (s == NULL)
-   {
-      goto error;
-   }
-
-   if (SSL_set_fd(s, socket) == 0)
-   {
-      goto error;
-   }
-
-   *ssl = s;
-
-   return 0;
-
-error:
-
-   if (s != NULL)
-   {
-      SSL_shutdown(s);
-      SSL_free(s);
-   }
-   SSL_CTX_free(ctx);
-
-   return 1;
-}
-
 static int
 auth_query(SSL* c_ssl, int client_fd, int slot, char* username, char* database, int hba_method __attribute__((unused)))
 {
@@ -5514,8 +5280,7 @@ static int
 create_client_tls_connection(int fd, SSL** ssl, char* tls_key_file, char* tls_cert_file, char* tls_ca_file)
 {
    SSL_CTX* ctx = NULL;
-   SSL* s = NULL;
-   int status = -1;
+   struct tls* t = NULL;
 
    /* We are acting as a client against the server */
    if (pgagroal_create_ssl_ctx(true, &ctx))
@@ -5524,63 +5289,42 @@ create_client_tls_connection(int fd, SSL** ssl, char* tls_key_file, char* tls_ce
       goto error;
    }
 
-   /* Create SSL structure */
-   if (create_ssl_client(ctx, tls_key_file, tls_cert_file, tls_ca_file, fd, &s))
+   /* Create a socket-decoupled client context */
+   if (pgagroal_tls_create_client(ctx, tls_key_file, tls_cert_file, tls_ca_file, &t))
    {
       pgagroal_log_error("Client failed");
+      ctx = NULL; /* pgagroal_tls_create_client already released the context */
       goto error;
    }
 
-   do
+   pgagroal_tls_set_fd(t, fd);
+
+   /* Drive the backend handshake through the socket shim (memory BIOs) */
+   if (pgagroal_tls_socket_handshake(t, fd) != PGAGROAL_TLS_OK)
    {
-      status = SSL_connect(s);
+      unsigned long err;
 
-      if (status != 1)
-      {
-         int err = SSL_get_error(s, status);
-         switch (err)
-         {
-            case SSL_ERROR_ZERO_RETURN:
-            case SSL_ERROR_WANT_READ:
-            case SSL_ERROR_WANT_WRITE:
-            case SSL_ERROR_WANT_CONNECT:
-            case SSL_ERROR_WANT_ACCEPT:
-            case SSL_ERROR_WANT_X509_LOOKUP:
-#ifndef HAVE_OPENBSD
-            case SSL_ERROR_WANT_ASYNC:
-            case SSL_ERROR_WANT_ASYNC_JOB:
-            case SSL_ERROR_WANT_CLIENT_HELLO_CB:
-#endif
-               break;
-            case SSL_ERROR_SYSCALL:
-               pgagroal_log_error("SSL_ERROR_SYSCALL: FD %d", fd);
-               pgagroal_log_error("%s", ERR_error_string(err, NULL));
-               pgagroal_log_error("%s", ERR_lib_error_string(err));
-               pgagroal_log_error("%s", ERR_reason_error_string(err));
-               errno = 0;
-               goto error;
-               break;
-            case SSL_ERROR_SSL:
-               pgagroal_log_error("SSL_ERROR_SSL: FD %d", fd);
-               pgagroal_log_error("%s", ERR_error_string(err, NULL));
-               pgagroal_log_error("%s", ERR_lib_error_string(err));
-               pgagroal_log_error("%s", ERR_reason_error_string(err));
-               errno = 0;
-               goto error;
-               break;
-         }
-         ERR_clear_error();
-      }
+      err = ERR_get_error();
+      pgagroal_log_error("Backend TLS handshake failed on FD %d: %s", fd, ERR_reason_error_string(err));
+      goto error;
    }
-   while (status != 1);
 
-   *ssl = s;
+   *ssl = t->ssl;
 
    return AUTH_SUCCESS;
 
 error:
 
-   *ssl = s;
+   if (t != NULL)
+   {
+      /* Frees the wrapper, its SSL/BIOs, and the SSL_CTX */
+      pgagroal_close_ssl(t->ssl);
+   }
+   else if (ctx != NULL)
+   {
+      SSL_CTX_free(ctx);
+   }
+   *ssl = NULL;
 
    return AUTH_ERROR;
 }
@@ -5679,10 +5423,21 @@ pgagroal_close_ssl(SSL* ssl)
 {
    int res;
    SSL_CTX* ctx;
+   struct tls* t;
 
    if (ssl != NULL)
    {
       ctx = SSL_get_SSL_CTX(ssl);
+
+      /* Socket-decoupled wrapper owns the SSL and its BIOs */
+      t = pgagroal_tls_from_ssl(ssl);
+      if (t != NULL)
+      {
+         pgagroal_tls_free(t);
+         SSL_CTX_free(ctx);
+         return;
+      }
+
       res = SSL_shutdown(ssl);
       if (res == 0)
       {

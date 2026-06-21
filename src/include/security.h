@@ -149,28 +149,6 @@ int
 accept_ssl_vault(struct vault_configuration* config, int client_fd, SSL** c_ssl);
 
 /**
- * Create a SSL context
- * @param client True if client, false if server
- * @param ctx The SSL context
- * @return 0 upon success, otherwise 1
- */
-int
-pgagroal_create_ssl_ctx(bool client, SSL_CTX** ctx);
-
-/**
- * Create a SSL server
- * @param ctx The SSL context
- * @param key_file The key file path
- * @param cert_file The certificate file path
- * @param ca_file The ca file path
- * @param socket The socket
- * @param ssl The SSL structure
- * @return 0 upon success, otherwise 1
- */
-int
-pgagroal_create_ssl_server(SSL_CTX* ctx, char* key_file, char* cert_file, char* ca_file, int socket, SSL** ssl);
-
-/**
  * Close a SSL structure
  * @param ssl The SSL structure
  */

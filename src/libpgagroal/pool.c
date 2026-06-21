@@ -38,6 +38,7 @@
 #include <prometheus.h>
 #include <security.h>
 #include <server.h>
+#include <tls.h>
 #include <tracker.h>
 #include <utils.h>
 #include <configuration.h>
@@ -682,14 +683,26 @@ pgagroal_kill_connection(int slot, SSL* ssl)
 
       if (ssl != NULL)
       {
+         struct tls* t = pgagroal_tls_from_ssl(ssl);
+
          ctx = SSL_get_SSL_CTX(ssl);
-         ssl_shutdown = SSL_shutdown(ssl);
-         if (ssl_shutdown == 0)
+
+         if (t != NULL)
          {
-            SSL_shutdown(ssl);
+            /* Socket-decoupled wrapper owns the SSL and its BIOs */
+            pgagroal_tls_free(t);
+            SSL_CTX_free(ctx);
          }
-         SSL_free(ssl);
-         SSL_CTX_free(ctx);
+         else
+         {
+            ssl_shutdown = SSL_shutdown(ssl);
+            if (ssl_shutdown == 0)
+            {
+               SSL_shutdown(ssl);
+            }
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+         }
       }
 
       if (!pgagroal_socket_has_error(fd))

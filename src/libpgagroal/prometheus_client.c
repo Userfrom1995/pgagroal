@@ -33,6 +33,7 @@
 #include <network.h>
 #include <prometheus_client.h>
 #include <security.h>
+#include <tls.h>
 #include <utils.h>
 #include <value.h>
 

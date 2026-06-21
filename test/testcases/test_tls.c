@@ -31,6 +31,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <openssl/evp.h>
 #include <openssl/x509.h>
@@ -380,6 +383,119 @@ cleanup:
    if (sctx != NULL)
    {
       SSL_CTX_free(sctx);
+   }
+   MCTF_FINISH();
+}
+
+// The socket-driver shim interoperates with a stock SSL_set_fd peer over a real socket
+MCTF_TEST(test_pgagroal_tls_socket_shim_roundtrip)
+{
+   const char* msg = "socket driver round trip";
+   SSL_CTX* sctx = NULL;
+   SSL_CTX* cctx = NULL;
+   struct tls* client = NULL;
+   pid_t pid = -1;
+   int sv[2] = {-1, -1};
+   unsigned char out[256];
+   size_t nread = 0;
+
+   sctx = tls_test_server_ctx();
+   cctx = tls_test_client_ctx();
+   MCTF_ASSERT_PTR_NONNULL(sctx, cleanup, "server SSL_CTX creation failed");
+   MCTF_ASSERT_PTR_NONNULL(cctx, cleanup, "client SSL_CTX creation failed");
+
+   MCTF_ASSERT_INT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0, cleanup, "socketpair failed");
+
+   pid = fork();
+   MCTF_ASSERT(pid >= 0, cleanup, "fork failed");
+
+   if (pid == 0)
+   {
+      /* child: stock socket-bound TLS server -- accept, echo one message, close */
+      SSL* ssl = SSL_new(sctx);
+      char buf[256];
+      int n;
+
+      close(sv[1]);
+      SSL_set_fd(ssl, sv[0]);
+      if (SSL_accept(ssl) == 1)
+      {
+         n = SSL_read(ssl, buf, sizeof(buf));
+         if (n > 0)
+         {
+            SSL_write(ssl, buf, n);
+         }
+      }
+      SSL_shutdown(ssl);
+      SSL_free(ssl);
+      close(sv[0]);
+      _exit(0);
+   }
+
+   close(sv[0]);
+   sv[0] = -1;
+
+   /* parent: drive the client end entirely through the wrapper + socket shim */
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_create(cctx, false, &client), PGAGROAL_TLS_OK,
+                      cleanup, "client tls context creation failed");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_handshake(client, sv[1]), PGAGROAL_TLS_OK,
+                      cleanup, "socket handshake against stock peer failed");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_write(client, sv[1], msg, strlen(msg)), PGAGROAL_TLS_OK,
+                      cleanup, "socket write failed");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_read(client, sv[1], out, sizeof(out), &nread),
+                      PGAGROAL_TLS_OK, cleanup, "socket read failed");
+   MCTF_ASSERT_INT_EQ((int)nread, (int)strlen(msg), cleanup, "echo length mismatch");
+   MCTF_ASSERT(memcmp(out, msg, strlen(msg)) == 0, cleanup, "echo payload mismatch");
+
+cleanup:
+   if (pid > 0)
+   {
+      waitpid(pid, NULL, 0);
+   }
+   pgagroal_tls_free(client);
+   if (sv[0] >= 0)
+   {
+      close(sv[0]);
+   }
+   if (sv[1] >= 0)
+   {
+      close(sv[1]);
+   }
+   if (sctx != NULL)
+   {
+      SSL_CTX_free(sctx);
+   }
+   if (cctx != NULL)
+   {
+      SSL_CTX_free(cctx);
+   }
+   MCTF_FINISH();
+}
+
+// The wrapper is recoverable from its SSL object, enabling transparent I/O routing
+MCTF_TEST(test_pgagroal_tls_from_ssl_backpointer)
+{
+   SSL_CTX* cctx = NULL;
+   struct tls* client = NULL;
+
+   cctx = tls_test_client_ctx();
+   MCTF_ASSERT_PTR_NONNULL(cctx, cleanup, "client SSL_CTX creation failed");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_create(cctx, false, &client), PGAGROAL_TLS_OK,
+                      cleanup, "client tls context creation failed");
+
+   MCTF_ASSERT(pgagroal_tls_from_ssl(client->ssl) == client, cleanup,
+               "from_ssl should recover the owning wrapper");
+   MCTF_ASSERT_PTR_NULL(pgagroal_tls_from_ssl(NULL), cleanup,
+                        "from_ssl(NULL) should be NULL");
+
+   pgagroal_tls_set_fd(client, 42);
+   MCTF_ASSERT_INT_EQ(client->fd, 42, cleanup, "set_fd should store the descriptor");
+
+cleanup:
+   pgagroal_tls_free(client);
+   if (cctx != NULL)
+   {
+      SSL_CTX_free(cctx);
    }
    MCTF_FINISH();
 }

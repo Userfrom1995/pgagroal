@@ -46,6 +46,7 @@
 #include <server.h>
 #include <shmem.h>
 #include <status.h>
+#include <tls.h>
 #include <utils.h>
 #include <worker.h>
 

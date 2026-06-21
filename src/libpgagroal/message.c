@@ -34,6 +34,7 @@
 #include <message.h>
 #include <network.h>
 #include <shmem.h>
+#include <tls.h>
 #include <utils.h>
 #include <worker.h>
 
@@ -1503,8 +1504,47 @@ ssl_read_message(SSL* ssl, int timeout, struct message** msg)
    ssize_t numbytes;
    time_t start_time;
    struct message* m = NULL;
+   struct tls* t = pgagroal_tls_from_ssl(ssl);
 
    pgagroal_memory_init();
+
+   /* Socket-decoupled wrapper: pump ciphertext via the socket shim. */
+   if (t != NULL)
+   {
+      struct timeval tv;
+      size_t nread = 0;
+      int rc;
+
+      if (unlikely(timeout > 0))
+      {
+         tv.tv_sec = timeout;
+         tv.tv_usec = 0;
+         setsockopt(t->fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+      }
+
+      m = pgagroal_memory_message();
+      rc = pgagroal_tls_socket_read(t, t->fd, m->data, MESSAGE_PARSE_BUFFER_SIZE, &nread);
+
+      if (unlikely(timeout > 0))
+      {
+         tv.tv_sec = 0;
+         tv.tv_usec = 0;
+         setsockopt(t->fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+      }
+
+      if (rc == PGAGROAL_TLS_OK && nread > 0)
+      {
+         m->kind = (signed char)(*((char*)m->data));
+         m->length = (ssize_t)nread;
+         *msg = m;
+         return MESSAGE_STATUS_OK;
+      }
+      if (rc == PGAGROAL_TLS_CLOSED)
+      {
+         return MESSAGE_STATUS_ZERO;
+      }
+      return MESSAGE_STATUS_ERROR;
+   }
 
    if (unlikely(timeout > 0))
    {
@@ -1584,10 +1624,21 @@ ssl_write_message(SSL* ssl, struct message* msg)
    int offset;
    ssize_t totalbytes;
    ssize_t remaining;
+   struct tls* t = pgagroal_tls_from_ssl(ssl);
 
 #ifdef DEBUG
    assert(msg != NULL);
 #endif
+
+   /* Socket-decoupled wrapper: encrypt and drain via the socket shim. */
+   if (t != NULL)
+   {
+      if (pgagroal_tls_socket_write(t, t->fd, msg->data, (size_t)msg->length) == PGAGROAL_TLS_OK)
+      {
+         return MESSAGE_STATUS_OK;
+      }
+      return MESSAGE_STATUS_ERROR;
+   }
 
    numbytes = 0;
    offset = 0;
