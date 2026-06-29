@@ -770,9 +770,9 @@ struct main_configuration
  */
 struct flush_timeout_slot
 {
-   bool in_use;
-   char database[MAX_DATABASE_LENGTH];
-   struct timespec expires_at; /* CLOCK_MONOTONIC */
+   bool in_use;                        /**< Is timeout slot in use */
+   char database[MAX_DATABASE_LENGTH]; /**< The database name */
+   struct timespec expires_at;         /**< Slot expires at */
 };
 
 #ifdef __cplusplus
