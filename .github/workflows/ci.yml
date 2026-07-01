@@ -249,6 +249,7 @@ jobs:
             pkg update
             pkg upgrade -y
             # Base dependencies
+            pkg search docutils
             pkg install -y \
               bash \
               sudo \
