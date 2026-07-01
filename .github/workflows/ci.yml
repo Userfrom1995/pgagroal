@@ -254,6 +254,7 @@ jobs:
               sudo \
               libev \
               cmake \
+              docutils \
               postgresql17-server \
               postgresql17-contrib \
               zstd \
@@ -262,7 +263,6 @@ jobs:
               libssh \
               libarchive \
               check \
-              py312-docutils \
               curl \
               doxygen \
               hs-pandoc \
