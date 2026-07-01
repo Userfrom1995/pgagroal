@@ -260,7 +260,7 @@ jobs:
               libssh \
               libarchive \
               check \
-              py311-docutils \
+              py312-docutils \
               curl \
               doxygen \
               hs-pandoc \
