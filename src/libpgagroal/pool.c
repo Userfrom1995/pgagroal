@@ -504,8 +504,15 @@ pgagroal_return_connection(int slot, SSL* ssl, bool transaction_mode)
    signed char in_use;
    signed char age_check;
    int transfer_fd = -1;
+   struct tls* t = NULL;
+   bool tls_owned = false;
 
    config = (struct main_configuration*)shmem;
+
+   /* Park a backend whose record layer we own: its TLS 1.3 state is serializable.
+    * Confined to non-transaction mode -- only use_pooled_connection resumes it. */
+   t = pgagroal_tls_from_ssl(ssl);
+   tls_owned = (t != NULL && t->owned && !transaction_mode);
 
    /* Kill the connection, if it lives longer than max_connection_age */
    if (pgagroal_time_is_valid(config->max_connection_age))
@@ -538,7 +545,7 @@ pgagroal_return_connection(int slot, SSL* ssl, bool transaction_mode)
        (config->connections[slot].has_security != SECURITY_SCRAM256 ||
         (config->connections[slot].has_security == SECURITY_SCRAM256 &&
          (config->authquery || pgagroal_user_known(config->connections[slot].username)))) &&
-       ssl == NULL)
+       (ssl == NULL || tls_owned))
    {
       state = atomic_load(&config->states[slot]);
 
@@ -553,6 +560,25 @@ pgagroal_return_connection(int slot, SSL* ssl, bool transaction_mode)
             {
                goto kill_connection;
             }
+         }
+
+         /* Park the serialized context for a later checkout to resume. Buffered
+          * ciphertext would be lost on worker exit, so only park when rbuf is empty. */
+         if (tls_owned)
+         {
+            if (t->rbuf_len != 0)
+            {
+               pgagroal_log_debug("pgagroal_return_connection: Slot %d cannot park (%zu bytes buffered)", slot, t->rbuf_len);
+               goto kill_connection;
+            }
+            if (pgagroal_tls_record_export(&t->record, (unsigned char*)config->connections[slot].tls_context,
+                                           sizeof(config->connections[slot].tls_context),
+                                           &config->connections[slot].tls_context_length))
+            {
+               pgagroal_log_debug("pgagroal_return_connection: Slot %d TLS context export failed", slot);
+               goto kill_connection;
+            }
+            pgagroal_log_debug("pgagroal_return_connection: Slot %d parked TLS context (%zu bytes)", slot, config->connections[slot].tls_context_length);
          }
 
          pgagroal_tracking_event_slot(TRACKER_RETURN_CONNECTION_SUCCESS, slot);
@@ -757,6 +783,10 @@ pgagroal_kill_connection(int slot, SSL* ssl)
       config->connections[slot].security_lengths[i] = 0;
       memset(&config->connections[slot].security_messages[i], 0, SECURITY_BUFFER_SIZE);
    }
+
+   /* The parked TLS context holds session secrets; cleanse before recycling the slot. */
+   pgagroal_cleanse(config->connections[slot].tls_context, sizeof(config->connections[slot].tls_context));
+   config->connections[slot].tls_context_length = 0;
 
    config->connections[slot].backend_pid = 0;
    config->connections[slot].backend_secret = 0;

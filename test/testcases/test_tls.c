@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include <openssl/evp.h>
+#include <openssl/rand.h>
 #include <openssl/x509.h>
 
 // Generate a throwaway self-signed certificate and key for the server side
@@ -493,6 +494,352 @@ MCTF_TEST(test_pgagroal_tls_from_ssl_backpointer)
 
 cleanup:
    pgagroal_tls_free(client);
+   if (cctx != NULL)
+   {
+      SSL_CTX_free(cctx);
+   }
+   MCTF_FINISH();
+}
+
+/* A sender (write dir) and receiver (read dir) sharing one secret: loopback. */
+static void
+record_mk_pair(struct tls_record* snd, struct tls_record* rcv, int aead, const unsigned char* secret, size_t sl)
+{
+   memset(snd, 0, sizeof(*snd));
+   memset(rcv, 0, sizeof(*rcv));
+   snd->aead = aead;
+   rcv->aead = aead;
+   pgagroal_tls_record_dir_init(&snd->write, aead, secret, sl);
+   pgagroal_tls_record_dir_init(&rcv->read, aead, secret, sl);
+}
+
+// A sealed record opens back to the original plaintext, advancing the sequence
+MCTF_TEST(test_pgagroal_tls_record_roundtrip)
+{
+   unsigned char secret[32];
+   struct tls_record snd, rcv;
+   unsigned char rec[512];
+   unsigned char pt[512];
+   size_t rlen = 0;
+   size_t plen = 0;
+
+   RAND_bytes(secret, sizeof(secret));
+   record_mk_pair(&snd, &rcv, PGAGROAL_TLS_AEAD_AES_128_GCM, secret, 32);
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_seal(&snd, (const unsigned char*)"hello", 5, rec, sizeof(rec), &rlen),
+                      PGAGROAL_TLS_OK, cleanup, "seal hello");
+   MCTF_ASSERT(rec[0] == 0x17, cleanup, "record is application_data");
+   MCTF_ASSERT(snd.write.seq == 1, cleanup, "write seq advanced");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_open(&rcv, rec, rlen, pt, sizeof(pt), &plen),
+                      PGAGROAL_TLS_OK, cleanup, "open hello");
+   MCTF_ASSERT(plen == 5 && memcmp(pt, "hello", 5) == 0, cleanup, "hello round trip");
+   MCTF_ASSERT(rcv.read.seq == 1, cleanup, "read seq advanced");
+
+cleanup:
+   MCTF_FINISH();
+}
+
+// Export/import preserves the sequence state so the stream continues across a move
+MCTF_TEST(test_pgagroal_tls_record_serialize)
+{
+   unsigned char secret[32];
+   struct tls_record snd, rcv, snd2;
+   unsigned char rec[512];
+   unsigned char pt[512];
+   unsigned char blob[256];
+   size_t rlen = 0;
+   size_t plen = 0;
+   size_t blen = 0;
+
+   RAND_bytes(secret, sizeof(secret));
+   record_mk_pair(&snd, &rcv, PGAGROAL_TLS_AEAD_AES_128_GCM, secret, 32);
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_seal(&snd, (const unsigned char*)"one", 3, rec, sizeof(rec), &rlen),
+                      PGAGROAL_TLS_OK, cleanup, "seal one");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_open(&rcv, rec, rlen, pt, sizeof(pt), &plen),
+                      PGAGROAL_TLS_OK, cleanup, "open one");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_export(&snd, blob, sizeof(blob), &blen),
+                      PGAGROAL_TLS_OK, cleanup, "export");
+   memset(&snd2, 0, sizeof(snd2));
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_import(blob, blen, &snd2),
+                      PGAGROAL_TLS_OK, cleanup, "import");
+   MCTF_ASSERT(snd2.write.seq == snd.write.seq, cleanup, "sequence preserved across import");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_seal(&snd2, (const unsigned char*)"two", 3, rec, sizeof(rec), &rlen),
+                      PGAGROAL_TLS_OK, cleanup, "seal two (imported)");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_open(&rcv, rec, rlen, pt, sizeof(pt), &plen),
+                      PGAGROAL_TLS_OK, cleanup, "open two");
+   MCTF_ASSERT(plen == 3 && memcmp(pt, "two", 3) == 0, cleanup, "two round trip after import");
+
+cleanup:
+   MCTF_FINISH();
+}
+
+// A tampered record fails AEAD integrity
+MCTF_TEST(test_pgagroal_tls_record_tamper)
+{
+   unsigned char secret[32];
+   struct tls_record snd, rcv;
+   unsigned char rec[512];
+   unsigned char pt[512];
+   size_t rlen = 0;
+   size_t plen = 0;
+
+   RAND_bytes(secret, sizeof(secret));
+   record_mk_pair(&snd, &rcv, PGAGROAL_TLS_AEAD_AES_128_GCM, secret, 32);
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_seal(&snd, (const unsigned char*)"secret-data", 11, rec, sizeof(rec), &rlen),
+                      PGAGROAL_TLS_OK, cleanup, "seal");
+   rec[7] ^= 0x01;
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_open(&rcv, rec, rlen, pt, sizeof(pt), &plen),
+                      PGAGROAL_TLS_ERROR, cleanup, "tampered record rejected");
+
+cleanup:
+   MCTF_FINISH();
+}
+
+// The AES-256-GCM suite (SHA-384, 48-byte secret) seals, opens, and survives export/import
+MCTF_TEST(test_pgagroal_tls_record_aes256)
+{
+   unsigned char secret[48];
+   struct tls_record snd, rcv, snd2;
+   unsigned char rec[512];
+   unsigned char pt[512];
+   unsigned char blob[256];
+   size_t rlen = 0;
+   size_t plen = 0;
+   size_t blen = 0;
+
+   RAND_bytes(secret, sizeof(secret));
+   record_mk_pair(&snd, &rcv, PGAGROAL_TLS_AEAD_AES_256_GCM, secret, 48);
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_seal(&snd, (const unsigned char*)"aes256", 6, rec, sizeof(rec), &rlen),
+                      PGAGROAL_TLS_OK, cleanup, "seal aes256");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_open(&rcv, rec, rlen, pt, sizeof(pt), &plen),
+                      PGAGROAL_TLS_OK, cleanup, "open aes256");
+   MCTF_ASSERT(plen == 6 && memcmp(pt, "aes256", 6) == 0, cleanup, "aes256 round trip");
+
+   /* Export/import must preserve the SHA-384 secret length and the sequence */
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_export(&snd, blob, sizeof(blob), &blen),
+                      PGAGROAL_TLS_OK, cleanup, "export aes256");
+   memset(&snd2, 0, sizeof(snd2));
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_import(blob, blen, &snd2),
+                      PGAGROAL_TLS_OK, cleanup, "import aes256");
+   MCTF_ASSERT(snd2.aead == PGAGROAL_TLS_AEAD_AES_256_GCM, cleanup, "aead preserved across import");
+   MCTF_ASSERT(snd2.write.secret_len == 48, cleanup, "sha-384 secret length preserved");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_seal(&snd2, (const unsigned char*)"more", 4, rec, sizeof(rec), &rlen),
+                      PGAGROAL_TLS_OK, cleanup, "seal after import");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_record_open(&rcv, rec, rlen, pt, sizeof(pt), &plen),
+                      PGAGROAL_TLS_OK, cleanup, "open after import");
+   MCTF_ASSERT(plen == 4 && memcmp(pt, "more", 4) == 0, cleanup, "round trip after import");
+
+cleanup:
+   MCTF_FINISH();
+}
+
+static SSL_CTX*
+tls_test_server_ctx_tls13(void)
+{
+   EVP_PKEY* key = NULL;
+   X509* crt = NULL;
+   SSL_CTX* ctx = NULL;
+
+   if (tls_test_self_signed(&key, &crt))
+   {
+      return NULL;
+   }
+   ctx = SSL_CTX_new(TLS_server_method());
+   if (ctx == NULL)
+   {
+      goto error;
+   }
+   SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+   SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+   SSL_CTX_set_ciphersuites(ctx, "TLS_AES_128_GCM_SHA256");
+   SSL_CTX_set_num_tickets(ctx, 0);
+   if (SSL_CTX_use_certificate(ctx, crt) != 1 || SSL_CTX_use_PrivateKey(ctx, key) != 1)
+   {
+      goto error;
+   }
+   X509_free(crt);
+   EVP_PKEY_free(key);
+   return ctx;
+
+error:
+   if (ctx != NULL)
+   {
+      SSL_CTX_free(ctx);
+   }
+   X509_free(crt);
+   EVP_PKEY_free(key);
+   return NULL;
+}
+
+static SSL_CTX*
+tls_test_client_ctx_tls13(void)
+{
+   SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+
+   if (ctx == NULL)
+   {
+      return NULL;
+   }
+   SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+   SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+   SSL_CTX_set_num_tickets(ctx, 0);
+   SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+   return ctx;
+}
+
+/* OpenSSL writes one app record; our harvested record context must decrypt it. */
+static int
+harvest_check_dir(struct tls* writer, struct tls_record* reader, const char* msg)
+{
+   unsigned char rec[4096];
+   unsigned char pt[4096];
+   size_t rlen = 0;
+   size_t plen = 0;
+   size_t written = 0;
+
+   if (pgagroal_tls_write(writer, msg, strlen(msg), &written) != PGAGROAL_TLS_OK)
+   {
+      return 1;
+   }
+   if (pgagroal_tls_drain(writer, rec, sizeof(rec), &rlen) != PGAGROAL_TLS_OK || rlen == 0)
+   {
+      return 1;
+   }
+   if (pgagroal_tls_record_open(reader, rec, rlen, pt, sizeof(pt), &plen) != PGAGROAL_TLS_OK)
+   {
+      return 1;
+   }
+   if (plen != strlen(msg) || memcmp(pt, msg, plen) != 0)
+   {
+      return 1;
+   }
+   return 0;
+}
+
+// After a TLS 1.3 handshake, the harvested record context decrypts OpenSSL's own records
+MCTF_TEST(test_pgagroal_tls_harvest_handoff)
+{
+   SSL_CTX* sctx = NULL;
+   SSL_CTX* cctx = NULL;
+   struct tls* s = NULL;
+   struct tls* c = NULL;
+   struct tls_record srec;
+   struct tls_record crec;
+   int i;
+
+   sctx = tls_test_server_ctx_tls13();
+   cctx = tls_test_client_ctx_tls13();
+   MCTF_ASSERT_PTR_NONNULL(sctx, cleanup, "server ctx");
+   MCTF_ASSERT_PTR_NONNULL(cctx, cleanup, "client ctx");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_create(sctx, true, &s), PGAGROAL_TLS_OK, cleanup, "server create");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_create(cctx, false, &c), PGAGROAL_TLS_OK, cleanup, "client create");
+
+   for (i = 0; i < 32; i++)
+   {
+      pgagroal_tls_handshake(c);
+      pgagroal_tls_handshake(s);
+      tls_test_transfer(c, s);
+      tls_test_transfer(s, c);
+      if (s->handshake_complete && c->handshake_complete)
+      {
+         break;
+      }
+   }
+   MCTF_ASSERT(s->handshake_complete && c->handshake_complete, cleanup, "handshake complete");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_harvest(s, &srec), PGAGROAL_TLS_OK, cleanup, "harvest server");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_harvest(c, &crec), PGAGROAL_TLS_OK, cleanup, "harvest client");
+
+   MCTF_ASSERT_INT_EQ(harvest_check_dir(s, &crec, "from the server"), 0, cleanup, "server->client decrypt");
+   MCTF_ASSERT_INT_EQ(harvest_check_dir(c, &srec, "from the client"), 0, cleanup, "client->server decrypt");
+
+cleanup:
+   pgagroal_tls_free(s);
+   pgagroal_tls_free(c);
+   if (sctx != NULL)
+   {
+      SSL_CTX_free(sctx);
+   }
+   if (cctx != NULL)
+   {
+      SSL_CTX_free(cctx);
+   }
+   MCTF_FINISH();
+}
+
+// After pgagroal_tls_own, I/O flows over a real socket via our own record layer
+MCTF_TEST(test_pgagroal_tls_owned_io)
+{
+   SSL_CTX* sctx = NULL;
+   SSL_CTX* cctx = NULL;
+   struct tls* s = NULL;
+   struct tls* c = NULL;
+   int sv[2] = {-1, -1};
+   unsigned char out[256];
+   size_t n = 0;
+   int i;
+
+   sctx = tls_test_server_ctx_tls13();
+   cctx = tls_test_client_ctx_tls13();
+   MCTF_ASSERT_PTR_NONNULL(sctx, cleanup, "server ctx");
+   MCTF_ASSERT_PTR_NONNULL(cctx, cleanup, "client ctx");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_create(sctx, true, &s), PGAGROAL_TLS_OK, cleanup, "server create");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_create(cctx, false, &c), PGAGROAL_TLS_OK, cleanup, "client create");
+
+   for (i = 0; i < 32; i++)
+   {
+      pgagroal_tls_handshake(c);
+      pgagroal_tls_handshake(s);
+      tls_test_transfer(c, s);
+      tls_test_transfer(s, c);
+      if (s->handshake_complete && c->handshake_complete)
+      {
+         break;
+      }
+   }
+   MCTF_ASSERT(s->handshake_complete && c->handshake_complete, cleanup, "handshake complete");
+
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_own(s), PGAGROAL_TLS_OK, cleanup, "own server");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_own(c), PGAGROAL_TLS_OK, cleanup, "own client");
+   MCTF_ASSERT(s->owned && c->owned, cleanup, "owned flag set");
+
+   MCTF_ASSERT_INT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0, cleanup, "socketpair");
+   pgagroal_tls_set_fd(s, sv[0]);
+   pgagroal_tls_set_fd(c, sv[1]);
+
+   /* server -> client over our own record layer */
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_write(s, sv[0], "ping", 4), PGAGROAL_TLS_OK, cleanup, "owned write s->c");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_read(c, sv[1], out, sizeof(out), &n), PGAGROAL_TLS_OK, cleanup, "owned read c");
+   MCTF_ASSERT(n == 4 && memcmp(out, "ping", 4) == 0, cleanup, "s->c via owned layer");
+
+   /* client -> server over our own record layer */
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_write(c, sv[1], "pong", 4), PGAGROAL_TLS_OK, cleanup, "owned write c->s");
+   MCTF_ASSERT_INT_EQ(pgagroal_tls_socket_read(s, sv[0], out, sizeof(out), &n), PGAGROAL_TLS_OK, cleanup, "owned read s");
+   MCTF_ASSERT(n == 4 && memcmp(out, "pong", 4) == 0, cleanup, "c->s via owned layer");
+
+cleanup:
+   pgagroal_tls_free(s);
+   pgagroal_tls_free(c);
+   if (sv[0] >= 0)
+   {
+      close(sv[0]);
+   }
+   if (sv[1] >= 0)
+   {
+      close(sv[1]);
+   }
+   if (sctx != NULL)
+   {
+      SSL_CTX_free(sctx);
+   }
    if (cctx != NULL)
    {
       SSL_CTX_free(cctx);

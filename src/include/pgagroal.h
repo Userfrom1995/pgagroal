@@ -115,6 +115,8 @@ extern "C" {
 
 #define NUMBER_OF_SECURITY_MESSAGES    5
 
+#define TLS_CONTEXT_BUFFER_SIZE        256
+
 #define STATE_NOTINIT                  -2
 #define STATE_INIT                     -1
 #define STATE_FREE                     0
@@ -434,6 +436,9 @@ struct connection
    time_t timestamp;       /**< The last used timestamp */
    pid_t pid;              /**< The associated process id */
    int fd;                 /**< The descriptor */
+
+   size_t tls_context_length;                 /**< Length of the parked backend TLS context, 0 if none */
+   char tls_context[TLS_CONTEXT_BUFFER_SIZE]; /**< Serialized backend TLS context for pool resumption */
 } __attribute__((aligned(64)));
 
 /** @struct hba

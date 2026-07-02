@@ -35,6 +35,7 @@ extern "C" {
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <openssl/ssl.h>
 
@@ -43,6 +44,36 @@ extern "C" {
 #define PGAGROAL_TLS_CLOSED  2
 #define PGAGROAL_TLS_ERROR   (-1)
 
+/* TLS 1.3 AEAD cipher suites for the owned record layer */
+#define PGAGROAL_TLS_AEAD_AES_128_GCM 1
+#define PGAGROAL_TLS_AEAD_AES_256_GCM 2
+
+/* Maximum size of one TLS 1.3 record on the wire (header + 2^14 + expansion) */
+#define PGAGROAL_TLS_RECORD_MAX 16645
+
+/** @struct tls_record_dir
+ * One direction of an owned TLS 1.3 record stream.
+ */
+struct tls_record_dir
+{
+   unsigned char secret[48]; /**< The application traffic secret (<= SHA-384 size) */
+   size_t secret_len;        /**< The secret length (32 for SHA-256, 48 for SHA-384) */
+   unsigned char key[32];    /**< The derived AEAD key */
+   unsigned char iv[12];     /**< The derived AEAD static IV */
+   uint64_t seq;             /**< The record sequence number */
+};
+
+/** @struct tls_record
+ * A socket and process independent TLS 1.3 record context. It is serializable
+ * so it can move between the pool and a worker without re-handshaking the backend.
+ */
+struct tls_record
+{
+   int aead;                    /**< The AEAD suite (PGAGROAL_TLS_AEAD_*) */
+   struct tls_record_dir read;  /**< Records received from the peer */
+   struct tls_record_dir write; /**< Records sent to the peer */
+};
+
 /** @struct tls
  * A TLS context driven through memory BIOs instead of a socket, so the
  * cryptographic state is independent of the TCP connection lifecycle.
@@ -50,12 +81,20 @@ extern "C" {
  */
 struct tls
 {
-   SSL* ssl;                /**< The OpenSSL connection */
-   BIO* rbio;               /**< Inbound ciphertext: network -> engine */
-   BIO* wbio;               /**< Outbound ciphertext: engine -> network */
-   int fd;                  /**< The socket bound to this context, or -1 if none */
-   bool server;             /**< true for the accepting side */
-   bool handshake_complete; /**< true once the handshake has completed */
+   SSL* ssl;                                    /**< The OpenSSL connection */
+   BIO* rbio;                                   /**< Inbound ciphertext: network -> engine */
+   BIO* wbio;                                   /**< Outbound ciphertext: engine -> network */
+   int fd;                                      /**< The socket bound to this context, or -1 if none */
+   bool server;                                 /**< true for the accepting side */
+   bool handshake_complete;                     /**< true once the handshake has completed */
+   unsigned char client_secret[48];             /**< Captured TLS 1.3 client application traffic secret */
+   unsigned char server_secret[48];             /**< Captured TLS 1.3 server application traffic secret */
+   size_t secret_len;                           /**< Length of the captured secrets */
+   int secret_mask;                             /**< 0x1 client + 0x2 server captured */
+   bool owned;                                  /**< true once I/O is driven by our own record layer */
+   struct tls_record record;                    /**< Owned record-layer state (valid when owned) */
+   size_t rbuf_len;                             /**< Bytes buffered for inbound record framing */
+   unsigned char rbuf[PGAGROAL_TLS_RECORD_MAX]; /**< Inbound TLS record framing buffer */
 };
 
 /**
@@ -259,6 +298,87 @@ pgagroal_create_ssl_server(SSL_CTX* ctx, char* key_file, char* cert_file, char* 
  */
 int
 pgagroal_create_ssl_client(SSL_CTX* ctx, char* key, char* cert, char* root, int socket, SSL** ssl);
+
+/**
+ * Harvest the negotiated TLS 1.3 record state (cipher + application traffic
+ * secrets) from a completed handshake into a serializable record context. The
+ * read/write directions are assigned according to the context's role. Requires
+ * TLS 1.3; fails otherwise.
+ * @param tls The context, with a completed handshake
+ * @param record The resulting serializable record context
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_harvest(struct tls* tls, struct tls_record* record);
+
+/**
+ * Switch a context to its own serializable record layer after the handshake:
+ * harvest the negotiated TLS 1.3 state, capture any buffered ciphertext, and
+ * route all further socket I/O through our record layer instead of OpenSSL.
+ * Requires TLS 1.3.
+ * @param tls The context, with a completed handshake
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_own(struct tls* tls);
+
+/**
+ * Initialize one record direction from its TLS 1.3 application traffic secret
+ * @param dir The direction
+ * @param aead The AEAD suite (PGAGROAL_TLS_AEAD_*)
+ * @param secret The traffic secret
+ * @param secret_len The secret length
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_record_dir_init(struct tls_record_dir* dir, int aead, const unsigned char* secret, size_t secret_len);
+
+/**
+ * Seal application plaintext into a TLS 1.3 record (advances the write sequence)
+ * @param record The record context
+ * @param plaintext The plaintext
+ * @param plaintext_len The plaintext length
+ * @param out The destination buffer (>= plaintext_len + 22)
+ * @param cap The buffer capacity
+ * @param out_len The produced record length
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_record_seal(struct tls_record* record, const unsigned char* plaintext, size_t plaintext_len, unsigned char* out, size_t cap, size_t* out_len);
+
+/**
+ * Open a TLS 1.3 record into application plaintext (advances the read sequence)
+ * @param record The record context
+ * @param rec The record bytes
+ * @param rec_len The record length
+ * @param out The destination buffer
+ * @param cap The buffer capacity
+ * @param out_len The produced plaintext length
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_record_open(struct tls_record* record, const unsigned char* rec, size_t rec_len, unsigned char* out, size_t cap, size_t* out_len);
+
+/**
+ * Serialize a record context to bytes so it can move between processes
+ * @param record The record context
+ * @param buf The destination buffer
+ * @param cap The buffer capacity
+ * @param len The produced length
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_record_export(const struct tls_record* record, unsigned char* buf, size_t cap, size_t* len);
+
+/**
+ * Restore a record context from its serialized bytes
+ * @param buf The serialized bytes
+ * @param len The length
+ * @param record The resulting context
+ * @return PGAGROAL_TLS_OK upon success, otherwise PGAGROAL_TLS_ERROR
+ */
+int
+pgagroal_tls_record_import(const unsigned char* buf, size_t len, struct tls_record* record);
 
 #ifdef __cplusplus
 }

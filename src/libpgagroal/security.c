@@ -79,6 +79,7 @@ static int get_auth_type(struct message* msg, int* auth_type);
 static int compare_auth_response(struct message* orig, struct message* response, int auth_type);
 
 static int use_pooled_connection(SSL* c_ssl, int client_fd, int slot, char* username, char* database, int hba_method, SSL** server_ssl);
+static int resume_backend_tls(int slot, SSL** server_ssl);
 static int use_unpooled_connection(struct message* msg, SSL* c_ssl, int client_fd, int slot,
                                    char* username, int hba_method, SSL** server_ssl);
 static int client_trust(SSL* c_ssl, int client_fd, char* username, char* password, int slot);
@@ -1372,8 +1373,60 @@ compare_auth_response(struct message* orig, struct message* response, int auth_t
    return 1;
 }
 
+/* Resume a parked backend TLS context on checkout. The carrier SSL is never
+ * handshaken; only the imported record layer moves traffic. */
 static int
-use_pooled_connection(SSL* c_ssl, int client_fd, int slot, char* username, char* database, int hba_method, SSL** server_ssl __attribute__((unused)))
+resume_backend_tls(int slot, SSL** server_ssl)
+{
+   SSL_CTX* ctx = NULL;
+   struct tls* t = NULL;
+   struct main_configuration* config;
+
+   config = (struct main_configuration*)shmem;
+
+   if (pgagroal_create_ssl_ctx(true, &ctx))
+   {
+      pgagroal_log_error("resume_backend_tls: CTX failed for slot %d", slot);
+      goto error;
+   }
+
+   if (pgagroal_tls_create(ctx, false, &t))
+   {
+      pgagroal_log_error("resume_backend_tls: wrapper failed for slot %d", slot);
+      goto error;
+   }
+
+   if (pgagroal_tls_record_import((const unsigned char*)config->connections[slot].tls_context,
+                                  config->connections[slot].tls_context_length, &t->record))
+   {
+      pgagroal_log_error("resume_backend_tls: context import failed for slot %d", slot);
+      goto error;
+   }
+
+   t->owned = true;
+   pgagroal_tls_set_fd(t, config->connections[slot].fd);
+   *server_ssl = t->ssl;
+
+   pgagroal_log_debug("resume_backend_tls: Slot %d resumed parked TLS context (%zu bytes)", slot, config->connections[slot].tls_context_length);
+
+   return 0;
+
+error:
+
+   if (t != NULL)
+   {
+      pgagroal_close_ssl(t->ssl);
+   }
+   else if (ctx != NULL)
+   {
+      SSL_CTX_free(ctx);
+   }
+
+   return 1;
+}
+
+static int
+use_pooled_connection(SSL* c_ssl, int client_fd, int slot, char* username, char* database, int hba_method, SSL** server_ssl)
 {
    int status = MESSAGE_STATUS_ERROR;
    struct main_configuration* config = NULL;
@@ -1384,6 +1437,16 @@ use_pooled_connection(SSL* c_ssl, int client_fd, int slot, char* username, char*
    database = resolve_database_alias(username, database);
 
    config = (struct main_configuration*)shmem;
+
+   /* Resume the parked backend TLS session, if one was stored on return. Without
+    * this the proxy would speak plaintext into an encrypted backend socket. */
+   if (config->connections[slot].tls_context_length > 0)
+   {
+      if (resume_backend_tls(slot, server_ssl))
+      {
+         goto error;
+      }
+   }
 
    password = get_frontend_password(username);
    if (password == NULL)
@@ -5289,6 +5352,15 @@ create_client_tls_connection(int fd, SSL** ssl, char* tls_key_file, char* tls_ce
       goto error;
    }
 
+   /* The record layer supports only TLS 1.3 AES-GCM; enforce it on the backend so
+    * a session can always be parked and no weaker protocol/cipher is negotiated. */
+   if (SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) == 0 ||
+       SSL_CTX_set_ciphersuites(ctx, "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384") == 0)
+   {
+      pgagroal_log_error("Backend TLS 1.3 policy failed");
+      goto error;
+   }
+
    /* Create a socket-decoupled client context */
    if (pgagroal_tls_create_client(ctx, tls_key_file, tls_cert_file, tls_ca_file, &t))
    {
@@ -5308,6 +5380,10 @@ create_client_tls_connection(int fd, SSL** ssl, char* tls_key_file, char* tls_ce
       pgagroal_log_error("Backend TLS handshake failed on FD %d: %s", fd, ERR_reason_error_string(err));
       goto error;
    }
+
+   /* Take over the record layer for a parkable TLS 1.3 context. If this fails the
+    * connection stays OpenSSL-backed -- it still works, it just cannot be parked. */
+   pgagroal_tls_own(t);
 
    *ssl = t->ssl;
 
