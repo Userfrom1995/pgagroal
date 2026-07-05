@@ -444,7 +444,7 @@ pgagroal_event_accept_init(struct io_watcher* watcher, int listen_fd, io_cb cb)
    watcher->fds.main.client_fd = -1;
    watcher->cb = cb;
 
-   // pgagroal_socket_nonblocking(listen_fd);
+   pgagroal_socket_nonblocking(listen_fd);
 
    return PGAGROAL_EVENT_RC_OK;
 }
