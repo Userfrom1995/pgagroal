@@ -25,7 +25,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BIN="$ROOT/build/src"
 EV_BACKEND="${EV_BACKEND:-auto}"
-MAX_SIZE="${MAX_SIZE:-3}"
+MAX_SIZE="${MAX_SIZE:-8}"
 TRIALS="${TRIALS:-12}"
 HOLD="${HOLD:-3}"
 BLOCKING="${BLOCKING:-10}"
@@ -96,21 +96,26 @@ start_daemon() {
       fi
       sleep 0.3
    done
-   echo "daemon did not become ready; see $CFG/startup.log and $LOG" >&2
+   echo "daemon did not become ready; logs below:" >&2
+   echo "=== STARTUP LOG ===" >&2
+   cat "$CFG/startup.log" >&2
+   echo "=== DAEMON LOG ===" >&2
+   [ -f "$LOG" ] && cat "$LOG" >&2
    return 1
 }
 
 run_trial() {
-   local served=0 stranded=0 i rcfile
+   local served=0 stranded=0 i rcfile trigger
    rcfile="$CFG/rc"
+   trigger="$CFG/trigger"
+   rm -f "$trigger"
    : > "$rcfile"
    for i in $(seq 1 "$CLIENTS"); do
       (
-         # Portable per-client watchdog (no GNU `timeout` dependency): run psql
-         # in the background, and a killer that fires after CLIENT_DEADLINE. A
-         # served client (completes, or fails cleanly with "pool is full" at
-         # blocking_timeout) exits before the deadline; a stranded client is
-         # killed by the watchdog (exit > 128).
+         # Synchronization barrier: wait until trigger file is created so all clients connect in a true simultaneous burst
+         while [ ! -f "$trigger" ]; do
+            sleep 0.01 2>/dev/null || sleep 1
+         done
          "$PSQL" -h localhost -p "$PGAGROAL_PORT" -U "$PG_USER" -d "$PG_DB" \
             -tAc "BEGIN; SELECT pg_sleep($HOLD); COMMIT;" >/dev/null 2>&1 &
          cpid=$!
@@ -124,6 +129,8 @@ run_trial() {
          kill "$wpid" 2>/dev/null
       ) &
    done
+   sleep 0.2
+   touch "$trigger"
    wait
    served=$(grep -c served "$rcfile")
    stranded=$(grep -c stranded "$rcfile")
