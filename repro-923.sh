@@ -26,13 +26,15 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 BIN="$ROOT/build/src"
 EV_BACKEND="${EV_BACKEND:-auto}"
 MAX_SIZE="${MAX_SIZE:-3}"
-TRIALS="${TRIALS:-6}"
+TRIALS="${TRIALS:-12}"
 HOLD="${HOLD:-3}"
 BLOCKING="${BLOCKING:-10}"
 PG_PORT="${PG_PORT:-5432}"
 PG_USER="${PG_USER:-postgres}"
 PG_DB="${PG_DB:-postgres}"
+PG_PASSWORD="${PG_PASSWORD:-}"
 PGAGROAL_PORT="${PGAGROAL_PORT:-2345}"
+[ -n "$PG_PASSWORD" ] && export PGPASSWORD="$PG_PASSWORD"
 CLIENTS=$(( 2 * MAX_SIZE ))
 # a client is "stranded" if it does not finish within blocking_timeout plus
 # generous slack; a served client returns in ~HOLD (or times out cleanly at
@@ -80,7 +82,7 @@ EOF
    # DATABASE USER MAX_SIZE INITIAL_SIZE MIN_SIZE  (no prefill)
    echo "$PG_DB $PG_USER $MAX_SIZE 0 0" > "$CFG/pgagroal_databases.conf"
    : > "$CFG/pgagroal_users.conf"
-   "$BIN/pgagroal-admin" -f "$CFG/pgagroal_users.conf" -U "$PG_USER" -P trust user add >/dev/null 2>&1
+   "$BIN/pgagroal-admin" -f "$CFG/pgagroal_users.conf" -U "$PG_USER" -P "${PG_PASSWORD:-trust}" user add >/dev/null 2>&1
 }
 
 start_daemon() {
