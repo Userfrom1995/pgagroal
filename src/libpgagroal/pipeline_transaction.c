@@ -120,7 +120,8 @@ transaction_start(struct event_loop* loop, struct worker_io* w)
    deallocate = false;
 
    memset(&p, 0, sizeof(p));
-   pgagroal_snprintf(&p[0], sizeof(p), MAIN_UDS);
+   /* Use a per-worker socket, not MAIN_UDS: binding MAIN_UDS here would collide with the main management socket and reset pgagroal-cli once a client is attached */
+   pgagroal_snprintf(&p[0], sizeof(p), ".s.pgagroal.%d", (int)getpid());
 
    if (pgagroal_bind_unix_socket(config->unix_socket_dir, &p[0], &unix_socket))
    {
@@ -587,7 +588,8 @@ shutdown_mgt(struct event_loop* loop __attribute__((unused)))
    config = (struct main_configuration*)shmem;
 
    memset(&p, 0, sizeof(p));
-   pgagroal_snprintf(&p[0], sizeof(p), MAIN_UDS);
+   /* Must match the per-worker socket bound in transaction_start, not MAIN_UDS, so cleanup removes the right socket */
+   pgagroal_snprintf(&p[0], sizeof(p), ".s.pgagroal.%d", (int)getpid());
 
    pgagroal_io_stop(&io_mgt);
    pgagroal_disconnect(unix_socket);
