@@ -29,8 +29,8 @@
 set -eo pipefail
 
 # Variables
-ENV_PGVERSION="${TEST_PG_VERSION:-17}"
-export TEST_PG_VERSION="${TEST_PG_VERSION:-17}"
+ENV_PGVERSION="${TEST_PG_VERSION:-19}"
+export TEST_PG_VERSION="${TEST_PG_VERSION:-19}"
 IMAGE_NAME="pgagroal-test-postgresql${ENV_PGVERSION}-rocky10"
 CONTAINER_NAME="pgagroal-test-postgresql${ENV_PGVERSION}"
 
