@@ -316,8 +316,8 @@ pgagroal_authenticate(int client_fd, char* address, int* slot, SSL** client_ssl,
       }
    }
 
-   /* 196608 -> Ok */
-   if (request == 196608)
+   /* v3 protocol (196608 == 3.0, accept any 3.x) */
+   if (request >> 16 == 3)
    {
       request_msg = pgagroal_copy_message(msg);
 
@@ -739,8 +739,8 @@ pgagroal_remote_management_auth(int client_fd, char* address, SSL** client_ssl)
       }
    }
 
-   /* 196608 -> Ok */
-   if (request == 196608)
+   /* v3 protocol (196608 == 3.0, accept any 3.x) */
+   if (request >> 16 == 3)
    {
       request_msg = pgagroal_copy_message(msg);
 
