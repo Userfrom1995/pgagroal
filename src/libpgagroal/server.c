@@ -1276,6 +1276,11 @@ process_server_parameters(int server, struct deque* server_parameters)
             config->servers[server].version = major;
             config->servers[server].minor_version = minor;
          }
+         else if (sscanf(server_version, "%d", &major) == 1)
+         {
+            config->servers[server].version = major;
+            config->servers[server].minor_version = 0;
+         }
          else
          {
             pgagroal_log_error("Unable to parse server_version '%s' for %s",
