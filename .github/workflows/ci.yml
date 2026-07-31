@@ -141,7 +141,7 @@ jobs:
           chown -R runner:runner /tmp/pgagroal-test
 
           # Build the test command with appropriate env vars
-          TEST_ENV="export PATH=/usr/pgsql-19/bin:\$PATH"
+          TEST_ENV="export PATH=/usr/pgsql-19/bin:\$PATH && export TEST_PG_VERSION=19"
 
           if [ "${{ matrix.compiler }}" = "clang" ] && [ "${{ matrix.build_type }}" = "Debug" ]; then
             TEST_ENV="$TEST_ENV && export LLVM_PROFILE_FILE='/tmp/pgagroal-test/coverage/code-%p.profraw'"

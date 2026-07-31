@@ -25,6 +25,9 @@
 # TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+PG_VERSION="${TEST_PGVERSION:-17}"
+PG_BIN="/usr/pgsql-${PG_VERSION}/bin"
+
 export PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS:-100}
 export PG_SHARED_BUFFERS=${PG_SHARED_BUFFERS:-256MB}
 export PG_WORK_MEM=${PG_WORK_MEM:-4MB}
@@ -49,7 +52,7 @@ export PG_REPL_PASSWORD=${PG_REPL_PASSWORD}
 export PG_UTF8_USER_NAME=${PG_UTF8_USER_NAME}
 export PG_UTF8_USER_PASSWORD=${PG_UTF8_USER_PASSWORD}
 export PG_UTF8_DATABASE=${PG_UTF8_DATABASE}
-/usr/pgsql-17/bin/initdb -k -X /pgwal/ /pgdata/
+$PG_BIN/initdb -k -X /pgwal/ /pgdata/
 
 sed -i "s/PG_MAX_CONNECTIONS/$PG_MAX_CONNECTIONS/g" /conf/postgresql.conf
 sed -i "s/PG_SHARED_BUFFERS/$PG_SHARED_BUFFERS/g" /conf/postgresql.conf
@@ -78,8 +81,8 @@ sed -i "s/PG_REPL_PASSWORD/$PG_REPL_PASSWORD/g" /conf/setup.sql
 touch /pglog/logfile
 chmod 666 /pglog/logfile
 
-/usr/pgsql-17/bin/pg_ctl -D /pgdata/ start
-/usr/pgsql-17/bin/psql -q -h /tmp -f /conf/setup.sql postgres
-/usr/pgsql-17/bin/pg_ctl -D /pgdata/ stop
+$PG_BIN/pg_ctl -D /pgdata/ start
+$PG_BIN/psql -q -h /tmp -f /conf/setup.sql postgres
+$PG_BIN/pg_ctl -D /pgdata/ stop
 
-exec /usr/pgsql-17/bin/postgres -D /pgdata/ "$@"
+exec $PG_BIN/postgres -D /pgdata/ "$@"
