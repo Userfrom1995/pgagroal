@@ -71,7 +71,7 @@ jobs:
     needs: [format-check]
     runs-on: ubuntu-latest
     container:
-      image: rockylinux/rockylinux:10
+      image: rockylinux/rockylinux:11
       options: --security-opt seccomp=unconfined
     timeout-minutes: 30
     strategy:
