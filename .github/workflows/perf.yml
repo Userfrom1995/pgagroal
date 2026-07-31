@@ -65,7 +65,7 @@ jobs:
         run: |
           dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-10-x86_64/pgdg-redhat-repo-latest.noarch.rpm
           dnf -qy module disable postgresql 2>/dev/null || true
-          dnf install -y postgresql19 postgresql19-server postgresql19-contrib postgresql19-libs postgresql19-devel
+          dnf install -y --enablerepo=pgdg19-updates-testing postgresql19 postgresql19-server postgresql19-contrib postgresql19-libs postgresql19-devel
 
       - name: Set PostgreSQL on PATH
         run: echo "PATH=/usr/pgsql-19/bin:$PATH" >> "$GITHUB_ENV"
