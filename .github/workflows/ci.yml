@@ -5,10 +5,12 @@ on:
     branches:
       - master
       - 2.0.x
+      - testing
   pull_request:
     branches:
       - master
       - 2.0.x
+      - testing
   workflow_dispatch:
 
 jobs:
@@ -200,13 +202,75 @@ jobs:
           brew update
           brew install openssl libev zstd lz4 libssh bzip2 docutils check graphviz doxygen
 
-      - name: Configure and build with clang
+      - name: Print environment and toolchain info
         run: |
+          CC=clang
+          CXX=clang++
+          echo "=== Toolchain (CC/CXX used for the build) ==="
+          echo "CC=$CC"
+          echo "CXX=$CXX"
+          echo "clang path: $(which $CC)"
+          echo "clang++ path: $(which $CXX)"
+          $CC --version
+          $CXX --version
+          echo "=== macOS / OS ==="
+          sw_vers
+          uname -a
+          echo "=== CPU ==="
+          sysctl -n machdep.cpu.brand_string
+          sysctl -n hw.ncpu
+          echo "=== Memory ==="
+          sysctl -n hw.memsize | awk '{printf "%.1f GB\n", $0/1024/1024/1024}'
+          echo "=== Disk (root) ==="
+          df -h /
+
+      - name: Configure and build
+        run: |
+          export CC=clang
+          export CXX=clang++
           export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
           mkdir -p build
           cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           make -j$(sysctl -n hw.ncpu)
+
+      - name: Install and start PostgreSQL
+        run: |
+          brew install postgresql${{ env.POSTGRESQL_VERSION }}
+          PG_PREFIX=$(brew --prefix postgresql${{ env.POSTGRESQL_VERSION }})
+          echo "$PG_PREFIX/bin" >> "$GITHUB_PATH"
+          brew services start postgresql${{ env.POSTGRESQL_VERSION }}
+          for i in $(seq 1 30); do
+            if "$PG_PREFIX/bin/pg_isready" -h localhost -p 5432 >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "PostgreSQL did not become ready in time"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Run pgagroal and verify it responds to ping
+        run: |
+          mkdir -p /tmp/pgagroal-macos-test
+          cp doc/etc/pgagroal.conf doc/etc/pgagroal_hba.conf /tmp/pgagroal-macos-test/
+          sed -i '' "s|unix_socket_dir = /tmp/|unix_socket_dir = /tmp/pgagroal-macos-test/|" /tmp/pgagroal-macos-test/pgagroal.conf
+
+          # Note: pgagroal's -d/--daemon flag requires non-console logging, which the
+          # sample config doesn't set, so background it via the shell instead (this also
+          # matches how the macOS job used to smoke-test pgagroal before it was dropped).
+          "$BUILD_DIR/src/pgagroal" -c /tmp/pgagroal-macos-test/pgagroal.conf -a /tmp/pgagroal-macos-test/pgagroal_hba.conf > /tmp/pgagroal-macos-test/pgagroal.log 2>&1 &
+          sleep 5
+
+          "$BUILD_DIR/src/pgagroal-cli" -c /tmp/pgagroal-macos-test/pgagroal.conf ping
+          ping_status=$?
+
+          "$BUILD_DIR/src/pgagroal-cli" -c /tmp/pgagroal-macos-test/pgagroal.conf shutdown || true
+
+          cat /tmp/pgagroal-macos-test/pgagroal.log
+          exit $ping_status
 
   build-freebsd:
     needs: [format-check]
