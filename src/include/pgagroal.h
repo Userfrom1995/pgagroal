@@ -450,6 +450,9 @@ struct connection
    pid_t pid;              /**< The associated process id */
    int fd;                 /**< The descriptor */
 
+   uint64_t fd_dev;        /**< Identity (st_dev) of the descriptor's inode; guards cross-process reuse (#923) */
+   uint64_t fd_ino;        /**< Identity (st_ino) of the descriptor's inode; guards cross-process reuse (#923) */
+
    size_t tls_context_length;                 /**< Length of the parked backend TLS context, 0 if none */
    char tls_context[TLS_CONTEXT_BUFFER_SIZE]; /**< Serialized backend TLS context for pool resumption */
    bool reset_query_failed;                   /**< Set when reset query failed in ignore mode; skips future attempts */

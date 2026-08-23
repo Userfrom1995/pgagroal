@@ -186,3 +186,42 @@ MCTF_TEST(test_pgagroal_pool_max_size_cap)
 cleanup:
    MCTF_FINISH();
 }
+
+/*
+ * Regression test for issue #923: under concurrent connection bursts and
+ * per-rule oversubscription across event backends (io_uring, epoll, kqueue)
+ * and pipelines (session, transaction, performance), the listener must not
+ * strand connections in the accept backlog or stall the event loop.
+ */
+MCTF_TEST(test_pgagroal_pool_stall_oversubscription)
+{
+   struct main_configuration* config = (struct main_configuration*)shmem;
+   int hold_seconds = 1;
+   int client_count = 0;
+   int ok = 0;
+
+   if (config == NULL || config->max_connections <= 0)
+   {
+      MCTF_SKIP("configuration not available; cannot size the saturation load");
+   }
+
+   if (config->max_connections > MAX_SATURATION_CONNECTIONS)
+   {
+      client_count = MAX_SATURATION_CONNECTIONS;
+   }
+   else
+   {
+      client_count = config->max_connections;
+      if (client_count < 4)
+      {
+         client_count = 4;
+      }
+   }
+
+   ok = !pgagroal_tsclient_execute_concurrent_holds(user, database, client_count, hold_seconds);
+   MCTF_ASSERT(ok, cleanup,
+               "%d concurrent burst clients suffered stall or hang (#923 regression)",
+               client_count);
+cleanup:
+   MCTF_FINISH();
+}

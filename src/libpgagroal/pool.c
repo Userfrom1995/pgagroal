@@ -82,6 +82,7 @@ pgagroal_get_connection(char* username, char* database, bool reuse, bool transac
    long retry_delay;
    int ret;
    char* real_database;
+   struct timespec start_time_mono;
 
    struct main_configuration* config;
    struct main_prometheus* prometheus;
@@ -95,6 +96,7 @@ pgagroal_get_connection(char* username, char* database, bool reuse, bool transac
    retries = 0;
    retry_delay = 0; /* seeds the back-off at 1ms on the first blocking retry; persists across goto start */
    start_time = time(NULL);
+   clock_gettime(CLOCK_MONOTONIC, &start_time_mono);
    pgagroal_prometheus_connection_awaiting(best_rule);
 
 start:
@@ -303,6 +305,8 @@ start:
          pgagroal_log_debug("Connection setup: client_db='%s' -> postgres_db='%s'", database, real_database);
          config->connections[*slot].has_security = SECURITY_INVALID;
          config->connections[*slot].fd = fd;
+         pgagroal_socket_identity(fd, &config->connections[*slot].fd_dev,
+                                  &config->connections[*slot].fd_ino);
 
          atomic_store(&config->states[*slot], STATE_IN_USE);
       }
@@ -321,6 +325,35 @@ start:
             {
                atomic_store(&config->states[*slot], STATE_FREE);
                goto retry;
+            }
+         }
+         else
+         {
+            /* [#923] The descriptor number was recorded by another process
+             * (the worker that created or parked this backend). In this
+             * process the same number may refer to an unrelated open file:
+             * workers forked before a transfer never received the real
+             * descriptor. A healthy-looking but foreign socket would pass
+             * the plain validity check and strand the session. Require the
+             * inode identity to match as well. */
+            uint64_t dev = 0;
+            uint64_t ino = 0;
+
+            if (pgagroal_socket_identity(config->connections[*slot].fd, &dev, &ino) ||
+                dev != config->connections[*slot].fd_dev ||
+                ino != config->connections[*slot].fd_ino)
+            {
+               pgagroal_log_debug("pgagroal_get_connection: Slot %d FD %d - Identity mismatch",
+                                  *slot, config->connections[*slot].fd);
+               if (!transaction_mode)
+               {
+                  kill = true;
+               }
+               else
+               {
+                  atomic_store(&config->states[*slot], STATE_FREE);
+                  goto retry;
+               }
             }
          }
 
@@ -387,7 +420,10 @@ retry2:
          retry_delay = pgagroal_pool_next_retry_delay(retry_delay, config->connection_retry_delay);
          SLEEP(retry_delay)
 
-         double diff = difftime(time(NULL), start_time);
+         struct timespec now_mono;
+         clock_gettime(CLOCK_MONOTONIC, &now_mono);
+         double diff = (double)(now_mono.tv_sec - start_time_mono.tv_sec) +
+                       (double)(now_mono.tv_nsec - start_time_mono.tv_nsec) / 1000000000.0;
          if (diff >= (double)pgagroal_time_convert(config->blocking_timeout, FORMAT_TIME_S))
          {
             goto timeout;
@@ -816,6 +852,8 @@ pgagroal_kill_connection(int slot, SSL* ssl)
    config->connections[slot].start_time = -1;
    config->connections[slot].timestamp = -1;
    config->connections[slot].fd = -1;
+   config->connections[slot].fd_dev = 0;
+   config->connections[slot].fd_ino = 0;
    config->connections[slot].pid = -1;
 
    atomic_store(&config->states[slot], STATE_NOTINIT);

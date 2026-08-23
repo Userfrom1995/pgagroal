@@ -83,6 +83,7 @@ static int (*periodic_stop)(struct periodic_watcher*);
 #if HAVE_IO_URING
 static int ev_io_uring_init(void);
 static int ev_io_uring_destroy(void);
+static void ev_io_uring_drain_requests(void);
 static int ev_io_uring_loop(void);
 static int ev_io_uring_fork(void);
 static int ev_io_uring_handler(struct io_uring_cqe*);
@@ -145,18 +146,12 @@ static _Atomic(struct signal_watcher*) signal_watchers[PGAGROAL_NSIG] = {0};
 static _Atomic(signal_cb) signal_callbacks[PGAGROAL_NSIG] = {0};
 
 #if HAVE_LINUX
-
 #if HAVE_IO_URING
-static struct io_uring_params params; /* io_uring argument params */
-static int ring_size;                 /* io_uring sqe ring_size */
-#endif
-
+static int ring_size;   /* io_uring sqe ring_size */
+#endif                  /* HAVE_IO_URING */
 static int epoll_flags; /* Flags for epoll instance creation */
-
 #else
-
 static int kqueue_flags; /* Flags for kqueue instance creation */
-
 #endif /* HAVE_LINUX */
 
 static int execution_context = PGAGROAL_CONTEXT_MAIN;
@@ -201,69 +196,112 @@ setup_ops(void)
    }
    else
    {
-      struct main_configuration* main_config = (struct main_configuration*)shmem;
-      if (main_config)
+      struct main_configuration* config = (struct main_configuration*)shmem;
+      if (config)
       {
-         backend_type = main_config->ev_backend;
+         backend_type = config->ev_backend;
       }
    }
 
-   if (backend_type == PGAGROAL_EVENT_BACKEND_AUTO)
+   switch (backend_type)
    {
-      backend_type = DEFAULT_EVENT_BACKEND;
-   }
+      case PGAGROAL_EVENT_BACKEND_AUTO:
+#if HAVE_LINUX
+#if HAVE_IO_URING
+         loop_init = ev_io_uring_init;
+         loop_fork = ev_io_uring_fork;
+         loop_destroy = ev_io_uring_destroy;
+         loop_start = ev_io_uring_loop;
+         io_start = ev_io_uring_io_start;
+         io_stop = ev_io_uring_io_stop;
+         periodic_init = ev_io_uring_periodic_init;
+         periodic_start = ev_io_uring_periodic_start;
+         periodic_stop = ev_io_uring_periodic_stop;
+         break;
+#else
+         loop_init = ev_epoll_init;
+         loop_fork = ev_epoll_fork;
+         loop_destroy = ev_epoll_destroy;
+         loop_start = ev_epoll_loop;
+         io_start = ev_epoll_io_start;
+         io_stop = ev_epoll_io_stop;
+         periodic_init = ev_epoll_periodic_init;
+         periodic_start = ev_epoll_periodic_start;
+         periodic_stop = ev_epoll_periodic_stop;
+         break;
+#endif /* HAVE_IO_URING */
+#else
+         loop_init = ev_kqueue_init;
+         loop_fork = ev_kqueue_fork;
+         loop_destroy = ev_kqueue_destroy;
+         loop_start = ev_kqueue_loop;
+         io_start = ev_kqueue_io_start;
+         io_stop = ev_kqueue_io_stop;
+         periodic_init = ev_kqueue_periodic_init;
+         periodic_start = ev_kqueue_periodic_start;
+         periodic_stop = ev_kqueue_periodic_stop;
+         break;
+#endif /* HAVE_LINUX */
 
 #if HAVE_LINUX
 #if HAVE_IO_URING
-   if (backend_type == PGAGROAL_EVENT_BACKEND_IO_URING)
-   {
-      loop_init = ev_io_uring_init;
-      loop_fork = ev_io_uring_fork;
-      loop_destroy = ev_io_uring_destroy;
-      loop_start = ev_io_uring_loop;
-      io_start = ev_io_uring_io_start;
-      io_stop = ev_io_uring_io_stop;
-      periodic_init = ev_io_uring_periodic_init;
-      periodic_start = ev_io_uring_periodic_start;
-      periodic_stop = ev_io_uring_periodic_stop;
-      return PGAGROAL_EVENT_RC_OK;
-   }
+      case PGAGROAL_EVENT_BACKEND_IO_URING:
+         loop_init = ev_io_uring_init;
+         loop_fork = ev_io_uring_fork;
+         loop_destroy = ev_io_uring_destroy;
+         loop_start = ev_io_uring_loop;
+         io_start = ev_io_uring_io_start;
+         io_stop = ev_io_uring_io_stop;
+         periodic_init = ev_io_uring_periodic_init;
+         periodic_start = ev_io_uring_periodic_start;
+         periodic_stop = ev_io_uring_periodic_stop;
+         break;
 #else
-   if (backend_type == PGAGROAL_EVENT_BACKEND_IO_URING)
-   {
-      pgagroal_log_warn("io_uring backend not available; falling back to epoll");
-      backend_type = PGAGROAL_EVENT_BACKEND_EPOLL;
-   }
+      case PGAGROAL_EVENT_BACKEND_IO_URING:
+         pgagroal_log_warn("io_uring backend not available; falling back to epoll");
+         loop_init = ev_epoll_init;
+         loop_fork = ev_epoll_fork;
+         loop_destroy = ev_epoll_destroy;
+         loop_start = ev_epoll_loop;
+         io_start = ev_epoll_io_start;
+         io_stop = ev_epoll_io_stop;
+         periodic_init = ev_epoll_periodic_init;
+         periodic_start = ev_epoll_periodic_start;
+         periodic_stop = ev_epoll_periodic_stop;
+         break;
 #endif /* HAVE_IO_URING */
-   if (backend_type == PGAGROAL_EVENT_BACKEND_EPOLL)
-   {
-      loop_init = ev_epoll_init;
-      loop_fork = ev_epoll_fork;
-      loop_destroy = ev_epoll_destroy;
-      loop_start = ev_epoll_loop;
-      io_start = ev_epoll_io_start;
-      io_stop = ev_epoll_io_stop;
-      periodic_init = ev_epoll_periodic_init;
-      periodic_start = ev_epoll_periodic_start;
-      periodic_stop = ev_epoll_periodic_stop;
-      return PGAGROAL_EVENT_RC_OK;
-   }
+
+      case PGAGROAL_EVENT_BACKEND_EPOLL:
+         loop_init = ev_epoll_init;
+         loop_fork = ev_epoll_fork;
+         loop_destroy = ev_epoll_destroy;
+         loop_start = ev_epoll_loop;
+         io_start = ev_epoll_io_start;
+         io_stop = ev_epoll_io_stop;
+         periodic_init = ev_epoll_periodic_init;
+         periodic_start = ev_epoll_periodic_start;
+         periodic_stop = ev_epoll_periodic_stop;
+         break;
 #else
-   if (backend_type == PGAGROAL_EVENT_BACKEND_KQUEUE)
-   {
-      loop_init = ev_kqueue_init;
-      loop_fork = ev_kqueue_fork;
-      loop_destroy = ev_kqueue_destroy;
-      loop_start = ev_kqueue_loop;
-      io_start = ev_kqueue_io_start;
-      io_stop = ev_kqueue_io_stop;
-      periodic_init = ev_kqueue_periodic_init;
-      periodic_start = ev_kqueue_periodic_start;
-      periodic_stop = ev_kqueue_periodic_stop;
-      return PGAGROAL_EVENT_RC_OK;
-   }
+      case PGAGROAL_EVENT_BACKEND_KQUEUE:
+         loop_init = ev_kqueue_init;
+         loop_fork = ev_kqueue_fork;
+         loop_destroy = ev_kqueue_destroy;
+         loop_start = ev_kqueue_loop;
+         io_start = ev_kqueue_io_start;
+         io_stop = ev_kqueue_io_stop;
+         periodic_init = ev_kqueue_periodic_init;
+         periodic_start = ev_kqueue_periodic_start;
+         periodic_stop = ev_kqueue_periodic_stop;
+         break;
 #endif /* HAVE_LINUX */
-   return PGAGROAL_EVENT_RC_ERROR;
+
+      default:
+         pgagroal_log_fatal("Unsupported backend type: %d", backend_type);
+         return PGAGROAL_EVENT_RC_FATAL;
+   }
+
+   return PGAGROAL_EVENT_RC_OK;
 }
 
 struct event_loop*
@@ -287,31 +325,6 @@ pgagroal_event_loop_init(void)
    if (!context_is_set)
    {
 #if HAVE_LINUX
-#if HAVE_IO_URING
-      /* io_uring context */
-
-#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
-      ring_size = 128;
-      params.cq_entries = 1024;
-#else
-      ring_size = 64;
-      params.cq_entries = 128;
-#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
-
-      params.flags = 0;
-      params.flags |= IORING_SETUP_CQSIZE; /* needed if I'm using cq_entries above */
-      params.flags |= IORING_SETUP_DEFER_TASKRUN;
-      params.flags |= IORING_SETUP_SINGLE_ISSUER;
-
-#if EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED
-      params.flags |= IORING_FEAT_FAST_POLL;
-#endif /* EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED */
-#if EXPERIMENTAL_FEATURE_USE_HUGE_ENABLED
-      /* XXX: Maybe this could be interesting if we cache the rings and the buffers? */
-      params.flags |= IORING_SETUP_NO_MMAP;
-#endif /* EXPERIMENTAL_FEATURE_USE_HUGE_ENABLED */
-#endif /* HAVE_IO_URING */
-
       /* epoll context */
       epoll_flags = 0;
 #else
@@ -804,10 +817,27 @@ static int
 ev_io_uring_init(void)
 {
    int rc;
+   struct io_uring_params rcv_params = {0};
    struct io_uring_params send_params = {0};
 
+   rcv_params.flags = IORING_SETUP_CQSIZE;
+#if EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED
+   rcv_params.flags |= IORING_FEAT_FAST_POLL;
+#endif /* EXPERIMENTAL_FEATURE_FAST_POLL_ENABLED */
+#if EXPERIMENTAL_FEATURE_USE_HUGE_ENABLED
+   rcv_params.flags |= IORING_SETUP_NO_MMAP;
+#endif /* EXPERIMENTAL_FEATURE_USE_HUGE_ENABLED */
+
+#if EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED
+   ring_size = 128;
+   rcv_params.cq_entries = 1024;
+#else
+   ring_size = 128;
+   rcv_params.cq_entries = 512;
+#endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
    /* Initialize the main ring for receives */
-   rc = io_uring_queue_init_params(ring_size, &loop->ring_rcv, &params);
+   rc = io_uring_queue_init_params(ring_size, &loop->ring_rcv, &rcv_params);
    if (rc)
    {
       pgagroal_log_fatal("io_uring_queue_init_params (recv ring) error: %s", strerror(-rc));
@@ -865,9 +895,72 @@ ev_io_uring_destroy(void)
       loop->br.buf = NULL;
    }
 #endif /* EXPERIMENTAL_FEATURE_RECV_MULTISHOT_ENABLED */
+
+   /* [#923] Cancel every request still armed against this loop and drain all
+    * completions before closing the rings. A recv left in flight holds its
+    * watcher's message buffer as the kernel write target: once the caller
+    * frees that buffer, an async completion lands in freed memory. That
+    * corrupts the heap, and under ASAN it wedges LeakSanitizer's exit-time
+    * scan (the stop-the-world tracer ptrace-freezes the worker forever),
+    * leaving a stranded client while the daemon looks healthy. */
+   ev_io_uring_drain_requests();
+
    io_uring_queue_exit(&loop->ring_rcv);
    io_uring_queue_exit(&loop->ring_snd);
    return PGAGROAL_EVENT_RC_OK;
+}
+
+static void
+ev_io_uring_drain_requests(void)
+{
+   struct io_uring_sqe* sqe = NULL;
+   struct io_uring_cqe* cqe = NULL;
+   struct __kernel_timespec ts = {.tv_sec = 0, .tv_nsec = 100000000};
+   int submitted = 0;
+
+   for (int i = 0; i < loop->events_nr; i++)
+   {
+      event_watcher_t* w = loop->events[i];
+      if (w == NULL || w->type == PGAGROAL_EVENT_TYPE_INVALID)
+      {
+         continue;
+      }
+
+      sqe = io_uring_get_sqe(&loop->ring_rcv);
+      if (!sqe)
+      {
+         io_uring_submit(&loop->ring_rcv);
+         sqe = io_uring_get_sqe(&loop->ring_rcv);
+         if (!sqe)
+         {
+            break;
+         }
+      }
+      io_uring_prep_cancel(sqe, (void*)w, 0);
+      submitted++;
+   }
+   if (submitted > 0)
+   {
+      io_uring_submit(&loop->ring_rcv);
+   }
+
+   /* Reap completions until both rings are quiet: no CQEs pending and every
+    * SQE slot free (nothing queued or in flight). Bounded so a wedged kernel
+    * state cannot hang teardown. */
+   for (int guard = 0; guard < 50; guard++)
+   {
+      if (io_uring_cq_ready(&loop->ring_rcv) == 0 &&
+          io_uring_sq_space_left(&loop->ring_rcv) >= (unsigned int)ring_size)
+      {
+         break;
+      }
+      cqe = NULL;
+      io_uring_wait_cqe_timeout(&loop->ring_rcv, &cqe, &ts);
+      if (cqe != NULL)
+      {
+         io_uring_cqe_seen(&loop->ring_rcv, cqe);
+      }
+   }
 }
 
 static int
@@ -904,6 +997,7 @@ ev_io_uring_io_start(struct io_watcher* watcher)
          pgagroal_log_fatal("unknown event type: %d", watcher->event_watcher.type);
          exit(1);
    }
+   io_uring_submit(&loop->ring_rcv);
    return PGAGROAL_EVENT_RC_OK;
 }
 
@@ -912,8 +1006,11 @@ ev_io_uring_io_stop(struct io_watcher* target)
 {
    int rc = PGAGROAL_EVENT_RC_OK;
    struct io_uring_sqe* sqe;
-   struct io_uring_cqe* cqe;
-   struct __kernel_timespec ts = {.tv_sec = 2, .tv_nsec = 0};
+
+   if (target != NULL)
+   {
+      target->event_watcher.type = PGAGROAL_EVENT_TYPE_INVALID;
+   }
 
    /* When io_stop is called it may never return to a loop
     * where sqes are submitted. Flush these sqes so the get call
@@ -936,7 +1033,7 @@ ev_io_uring_io_stop(struct io_watcher* target)
 
    io_uring_prep_cancel(sqe, (void*)target, 0);
 
-   io_uring_submit_and_wait_timeout(&loop->ring_rcv, &cqe, 0, &ts, NULL);
+   io_uring_submit(&loop->ring_rcv);
 
    return rc;
 }
@@ -1049,7 +1146,7 @@ retry:
 static int
 ev_io_uring_loop(void)
 {
-   int rc = PGAGROAL_EVENT_RC_ERROR;
+   int rc = PGAGROAL_EVENT_RC_OK;
    unsigned int events;
    int to_wait = 1; /* at first, wait for any 1 event */
    unsigned int head;
@@ -1057,7 +1154,7 @@ ev_io_uring_loop(void)
    struct __kernel_timespec* ts = NULL;
    struct __kernel_timespec idle_ts = {
       .tv_sec = 0,
-      .tv_nsec = 100000LL, /* seems best with 100000LL ns for most loads */
+      .tv_nsec = 10000000LL, /* 10ms */
    };
 
    pgagroal_event_loop_start();
@@ -1084,12 +1181,12 @@ ev_io_uring_loop(void)
       io_uring_for_each_cqe(&loop->ring_rcv, head, cqe)
       {
          rc = ev_io_uring_handler(cqe);
+         events++;
          if (rc)
          {
             pgagroal_event_loop_break();
             break;
          }
-         events++;
       }
 
       if (events)
@@ -1219,8 +1316,8 @@ ev_io_uring_handler(struct io_uring_cqe* cqe)
             rc = PGAGROAL_EVENT_RC_OK;
             io->cb(io);
 
-            /* Only rearm if loop is still running and connection is good */
-            if (pgagroal_event_loop_is_running())
+            /* Only rearm if loop is still running and watcher was not stopped by callback */
+            if (pgagroal_event_loop_is_running() && io->event_watcher.type == PGAGROAL_EVENT_TYPE_WORKER)
             {
                ev_io_uring_io_start(io);
             }

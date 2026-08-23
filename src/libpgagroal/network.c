@@ -425,6 +425,30 @@ pgagroal_socket_isvalid(int fd)
    return true;
 }
 
+int
+pgagroal_socket_identity(int fd, uint64_t* dev, uint64_t* ino)
+{
+   struct stat sb;
+
+   if (fd < 0 || dev == NULL || ino == NULL)
+   {
+      return 1;
+   }
+
+   if (fstat(fd, &sb) == -1)
+   {
+      errno = 0;
+      *dev = 0;
+      *ino = 0;
+      return 1;
+   }
+
+   *dev = (uint64_t)sb.st_dev;
+   *ino = (uint64_t)sb.st_ino;
+
+   return 0;
+}
+
 /**
  *
  */

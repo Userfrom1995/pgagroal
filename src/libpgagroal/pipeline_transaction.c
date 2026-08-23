@@ -62,6 +62,7 @@ static void transaction_periodic(void);
 static void start_mgt(struct event_loop* loop);
 static void shutdown_mgt(struct event_loop* loop);
 static void accept_cb(struct io_watcher* watcher);
+static void drain_mgt_socket(void);
 
 static int slot;
 static char username[MAX_USERNAME_LENGTH];
@@ -164,17 +165,13 @@ transaction_stop(struct event_loop* loop, struct worker_io* w)
 {
    if (slot != -1)
    {
-      struct main_configuration* config = NULL;
-
-      config = (struct main_configuration*)shmem;
-
       /* We are either in 'X' or the client terminated (consider cancel query) */
       if (in_tx)
       {
-         /* ROLLBACK */
-         pgagroal_write_rollback(w->server_ssl, config->connections[slot].fd);
+         pgagroal_write_rollback(w->server_ssl, fds[slot]);
+         in_tx = false;
       }
-
+      
       if (io_watcher_active)
       {
          pgagroal_io_stop(&server_io.io);
@@ -220,6 +217,11 @@ transaction_client(struct io_watcher* watcher)
          goto get_error;
       }
 
+      if (fds[slot] <= 0)
+      {
+         drain_mgt_socket();
+      }
+
       wi->server_fd = fds[slot];
       wi->server_ssl = s_ssl;
       wi->slot = slot;
@@ -228,10 +230,10 @@ transaction_client(struct io_watcher* watcher)
 
       memcpy(&config->connections[slot].appname[0], &appname[0], MAX_APPLICATION_NAME);
 
-      pgagroal_event_worker_init(&server_io.io, config->connections[slot].fd,
+      pgagroal_event_worker_init(&server_io.io, fds[slot],
                                  wi->client_fd, transaction_server);
       server_io.client_fd = wi->client_fd;
-      server_io.server_fd = config->connections[slot].fd;
+      server_io.server_fd = fds[slot];
       server_io.slot = slot;
       server_io.client_ssl = wi->client_ssl;
       server_io.server_ssl = wi->server_ssl;
@@ -395,6 +397,7 @@ static void
 transaction_server(struct io_watcher* watcher)
 {
    int status = MESSAGE_STATUS_ERROR;
+   bool saw_ready_for_query = false;
    struct worker_io* wi = NULL;
    struct message* msg = NULL;
    struct main_configuration* config = NULL;
@@ -433,6 +436,10 @@ transaction_server(struct io_watcher* watcher)
                }
 
                in_tx = tx_state != 'I';
+               if (!in_tx)
+               {
+                  saw_ready_for_query = true;
+               }
             }
 
             /* Calculate the offset to the next message */
@@ -470,7 +477,7 @@ transaction_server(struct io_watcher* watcher)
       }
 
       /* Check for ReadyForQuery message (Z) to detect transaction completion */
-      if (msg->kind == 'Z' && !in_tx && slot != -1)
+      if ((saw_ready_for_query || (msg->kind == 'Z' && !in_tx)) && slot != -1)
       {
          /* Transaction completed - stop I/O watcher immediately if still active */
          if (io_watcher_active)
@@ -683,4 +690,23 @@ accept_cb(struct io_watcher* watcher)
 done:
 
    pgagroal_disconnect(client_fd);
+}
+
+static void
+drain_mgt_socket(void)
+{
+   int client_fd = -1;
+
+   if (unix_socket <= 0)
+   {
+      return;
+   }
+
+   while ((client_fd = accept(unix_socket, NULL, NULL)) >= 0)
+   {
+      struct io_watcher temp_watcher;
+      memset(&temp_watcher, 0, sizeof(temp_watcher));
+      temp_watcher.fds.main.client_fd = client_fd;
+      accept_cb(&temp_watcher);
+   }
 }

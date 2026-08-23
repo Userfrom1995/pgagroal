@@ -100,6 +100,18 @@ bool
 pgagroal_socket_isvalid(int fd);
 
 /**
+ * Get the identity (inode) of the descriptor's underlying object.
+ * Used to verify that a descriptor number recorded by one process
+ * refers to the same open socket in another process (#923).
+ * @param fd The descriptor
+ * @param dev The device of the underlying inode
+ * @param ino The inode number
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgagroal_socket_identity(int fd, uint64_t* dev, uint64_t* ino);
+
+/**
  * Disconnect from a descriptor
  * @param fd The descriptor
  * @return 0 upon success, otherwise 1

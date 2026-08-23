@@ -2374,6 +2374,8 @@ accept_transfer_cb(struct io_watcher* watcher)
       }
 
       config->connections[slot].fd = fd;
+      pgagroal_socket_identity(fd, &config->connections[slot].fd_dev,
+                               &config->connections[slot].fd_ino);
       known_fds[slot] = config->connections[slot].fd;
 
       if (config->pipeline == PIPELINE_TRANSACTION)
@@ -2383,22 +2385,14 @@ accept_transfer_cb(struct io_watcher* watcher)
          {
             int c_fd = -1;
 
-            if (pgagroal_connection_get_pid(c->pid, &c_fd))
+            if (!pgagroal_connection_get_pid(c->pid, &c_fd))
             {
-               goto error;
+               if (!pgagroal_connection_id_write(c_fd, CONNECTION_CLIENT_FD))
+               {
+                  pgagroal_connection_transfer_write(c_fd, slot);
+               }
+               pgagroal_disconnect(c_fd);
             }
-
-            if (pgagroal_connection_id_write(c_fd, CONNECTION_CLIENT_FD))
-            {
-               goto error;
-            }
-
-            if (pgagroal_connection_transfer_write(c_fd, slot))
-            {
-               goto error;
-            }
-
-            pgagroal_disconnect(c_fd);
 
             c = c->next;
          }
@@ -2435,22 +2429,14 @@ accept_transfer_cb(struct io_watcher* watcher)
          {
             int c_fd = -1;
 
-            if (pgagroal_connection_get_pid(c->pid, &c_fd))
+            if (!pgagroal_connection_get_pid(c->pid, &c_fd))
             {
-               goto error;
+               if (!pgagroal_connection_id_write(c_fd, CONNECTION_REMOVE_FD))
+               {
+                  pgagroal_connection_transfer_write(c_fd, slot);
+               }
+               pgagroal_disconnect(c_fd);
             }
-
-            if (pgagroal_connection_id_write(c_fd, CONNECTION_REMOVE_FD))
-            {
-               goto error;
-            }
-
-            if (pgagroal_connection_transfer_write(c_fd, slot))
-            {
-               goto error;
-            }
-
-            pgagroal_disconnect(c_fd);
 
             c = c->next;
          }
