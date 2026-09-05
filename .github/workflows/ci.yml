@@ -3,12 +3,10 @@ name: CI
 on:
   push:
     branches:
-      - master
-      - 2.0.x
+      - '**'
   pull_request:
     branches:
-      - master
-      - 2.0.x
+      - '**'
   workflow_dispatch:
 
 jobs:
@@ -156,6 +154,11 @@ jobs:
           fi
 
           su - runner -c "cd $GITHUB_WORKSPACE && $TEST_ENV && bash ./build/check.sh run-configs-ci-nonbuild"
+
+      - name: Concurrency & Stall Stress Matrix Test
+        run: |
+          TEST_ENV="export PATH=/usr/pgsql-17/bin:\$PATH"
+          su - runner -c "cd $GITHUB_WORKSPACE && $TEST_ENV && bash ./test/stall_test.sh"
 
       - name: Report coverage summary
         if: matrix.compiler == 'clang' && matrix.build_type == 'Debug'

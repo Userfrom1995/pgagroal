@@ -903,10 +903,19 @@ ev_io_uring_destroy(void)
     * corrupts the heap, and under ASAN it wedges LeakSanitizer's exit-time
     * scan (the stop-the-world tracer ptrace-freezes the worker forever),
     * leaving a stranded client while the daemon looks healthy. */
-   ev_io_uring_drain_requests();
+   if (loop->ring_rcv.ring_fd >= 0)
+   {
+      ev_io_uring_drain_requests();
+   }
 
-   io_uring_queue_exit(&loop->ring_rcv);
-   io_uring_queue_exit(&loop->ring_snd);
+   if (loop->ring_rcv.ring_fd >= 0)
+   {
+      io_uring_queue_exit(&loop->ring_rcv);
+   }
+   if (loop->ring_snd.ring_fd >= 0)
+   {
+      io_uring_queue_exit(&loop->ring_snd);
+   }
    return PGAGROAL_EVENT_RC_OK;
 }
 
@@ -1201,6 +1210,22 @@ ev_io_uring_loop(void)
 static int
 ev_io_uring_fork(void)
 {
+   /* [#923] The rings were registered with io_uring_ring_dontfork(), so the
+    * child inherits the ring fds but NOT their mappings: the inherited
+    * struct io_uring points at unmapped memory and must never be touched
+    * with liburing calls. Close the stale fds so the kernel contexts are
+    * dropped; the worker creates its own fresh pair afterwards. */
+   if (loop->ring_rcv.ring_fd >= 0)
+   {
+      close(loop->ring_rcv.ring_fd);
+      loop->ring_rcv.ring_fd = -1;
+   }
+   if (loop->ring_snd.ring_fd >= 0)
+   {
+      close(loop->ring_snd.ring_fd);
+      loop->ring_snd.ring_fd = -1;
+   }
+
    return 0;
 }
 

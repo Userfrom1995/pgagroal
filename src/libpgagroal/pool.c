@@ -345,15 +345,14 @@ start:
             {
                pgagroal_log_debug("pgagroal_get_connection: Slot %d FD %d - Identity mismatch",
                                   *slot, config->connections[*slot].fd);
-               if (!transaction_mode)
-               {
-                  kill = true;
-               }
-               else
-               {
-                  atomic_store(&config->states[*slot], STATE_FREE);
-                  goto retry;
-               }
+               /* [#923] The recorded descriptor belongs to another process:
+                * never close the local number (it may be an unrelated file).
+                * Reset the slot so a fresh backend gets created, then retry. */
+               config->connections[*slot].fd = -1;
+               config->connections[*slot].fd_dev = 0;
+               config->connections[*slot].fd_ino = 0;
+               atomic_store(&config->states[*slot], STATE_NOTINIT);
+               goto retry;
             }
          }
 
