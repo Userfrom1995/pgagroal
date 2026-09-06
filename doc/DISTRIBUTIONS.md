@@ -5,7 +5,7 @@
 * a C compiler like [gcc 8+](https://gcc.gnu.org) (C17) or [clang 8+](https://clang.llvm.org/)
 * [cmake](https://cmake.org)
 * [GNU make](https://www.gnu.org/software/make/) or BSD `make`
-* [libev](http://software.schmorp.de/pkg/libev.html)
+* [liburing](https://github.com/axboe/liburing) (on Linux)
 * [OpenSSL 3.0+](http://www.openssl.org/)
 * [rst2man](https://docutils.sourceforge.io/)
 * [libatomic](https://gcc.gnu.org/wiki/Atomic)
@@ -27,7 +27,7 @@ All the dependencies can be installed via `dnf(8)` as follows:
 
 ```sh
 dnf install git gcc cmake make    \
-            libev libev-devel     \
+            liburing liburing-devel \
             openssl openssl-devel \
             systemd systemd-devel \
             python3-docutils      \
@@ -53,7 +53,6 @@ All the dependencies can be installed via `pkg(8)` as follows:
 
 ```sh
 pkg install cmake          	\
-            libev libevent 	\
             py311-docutils 	\
             lzlib           \
             liblz4          \

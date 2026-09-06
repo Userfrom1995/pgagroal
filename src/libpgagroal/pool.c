@@ -1292,7 +1292,7 @@ pgagroal_prefill(bool initial)
 
       if (size > 0)
       {
-         // do not perform prefil if
+         // do not perform prefill if
          // - the database is a reserved word
          // - the username is reserved
          if (pgagroal_is_database_reserved(config->limits[i].database) || pgagroal_is_username_reserved(config->limits[i].username))

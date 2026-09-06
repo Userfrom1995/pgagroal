@@ -1277,7 +1277,7 @@ if [[ -n "$SUBCOMMAND" ]]; then
     $SUDO dnf install -y \
       cmake \
       make \
-      libev libev-devel \
+      liburing liburing-devel \
       openssl openssl-devel \
       systemd systemd-devel \
       zlib zlib-devel \

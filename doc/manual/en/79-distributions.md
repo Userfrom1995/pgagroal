@@ -11,7 +11,7 @@ This chapter provides installation instructions for different operating systems 
 * a C compiler like [gcc 8+][gcc] (C17) or [clang 8+][clang]
 * [cmake][cmake]
 * [GNU make][make] or BSD `make`
-* [libev][libev]
+* [liburing][liburing] (on Linux)
 * [OpenSSL 3.0+][openssl]
 * [rst2man][rst2man]
 * [libatomic](https://gcc.gnu.org/wiki/Atomic)
@@ -31,7 +31,7 @@ All the dependencies can be installed via `dnf(8)` as follows:
 
 ```sh
 dnf install git gcc cmake make    \
-            libev libev-devel     \
+            liburing liburing-devel \
             openssl openssl-devel \
             systemd systemd-devel \
             python3-docutils      \
@@ -57,7 +57,6 @@ All the dependencies can be installed via `pkg(8)` as follows:
 
 ```sh
 pkg install cmake          	\
-            libev libevent 	\
             py311-docutils 	\
             lzlib           \
             liblz4          \
@@ -80,7 +79,7 @@ For Ubuntu and Debian systems:
 
 ```sh
 apt-get update
-apt-get install build-essential cmake libev-dev libssl-dev libsystemd-dev python3-docutils libatomic1 zlib1g-dev libzstd-dev liblz4-dev libbz2-dev binutils
+apt-get install build-essential cmake liburing-dev libssl-dev libsystemd-dev python3-docutils libatomic1 zlib1g-dev libzstd-dev liblz4-dev libbz2-dev binutils
 ```
 
 ### macOS

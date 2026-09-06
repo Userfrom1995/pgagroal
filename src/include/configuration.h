@@ -451,7 +451,7 @@ pgagroal_init_pidfile_if_needed(void);
  * take into account doing a prefill. For example, there must
  * be users and limits set, otherwise it does not
  * make any sense to attempt a prefill.
- * This can be used to wrap the condituion before calling
+ * This can be used to wrap the condition before calling
  * other prefill functions, e.g., `pgagroal_prefill()`.
  */
 bool
@@ -467,7 +467,7 @@ pgagroal_can_prefill(void);
  * it can be written as 'section.context.search'.
  * If both the section and the context are omitted, the 'search' is performed among the
  * pgagroal global settings (i.e., those under the [pgagroal] main section). The same
- * happens if the the section is specified as 'pgagroal', therefore the following two
+ * happens if the section is specified as 'pgagroal', therefore the following two
  * terms do the same search:
  * - `update_process_title`
  * - `pgagroal.update_process_title`
@@ -481,16 +481,16 @@ pgagroal_can_prefill(void);
  * by means of 'context', and within such the 'search' is performed.
  *
  * In the case of the `server` section, the `context` has to be the name of a server configured,
- * while the `search` has to be the keyword to look for. AS an example: `server.venkman.port` provides
+ * while the `search` has to be the keyword to look for. As an example: `server.venkman.port` provides
  * the value of the 'port' setting under the server section '[venkman]'.
  *
- * In the case of the 'hba` section, the `context` has to be a username as it appears in a line
+ * In the case of the `hba` section, the `context` has to be a username as it appears in a line
  * of the pgagroal_hba.conf file, while the `search` has to be the column keyword to snoop.
  * For example, `hba.luca.method` will seek for the `method` used to authenticate the user `luca`.
  * Please note that, since the same user could be listed more than once, only the first matching
  * entry is reported.
  *
- * In the case of the 'limit` section, the `context` has to be a database name as it appears in a line
+ * In the case of the `limit` section, the `context` has to be a database name as it appears in a line
  * of the pgagroal_database.conf file, while the `search` has to be the column keyword to snoop.
  * For example, `limit.pgbench.max_size` will seek for the `max_size` connection limit for the
  * database 'pgbench'.

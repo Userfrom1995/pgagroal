@@ -175,8 +175,8 @@ void
 pgagroal_prometheus_connection_awaiting(int limit_index);
 
 /**
- * An awaiting connection, i.e., one holded by `blocking_timeout`
- * that is no more on hold and can restart its workflo.
+ * An awaiting connection, i.e., one held by `blocking_timeout`
+ * that is no longer on hold and can restart its workflow.
  *
  *
  * <b>
@@ -350,7 +350,7 @@ pgagroal_prometheus_logging(int logging);
  * even if the cache has not been configured at all!
  *
  * If the memory cannot be allocated, the function issues errors
- * in the logs and disables the caching machinaery.
+ * in the logs and disables the caching machinery.
  *
  * @param p_size a pointer to where to store the size of
  * allocated chunk of memory

@@ -288,7 +288,6 @@ jobs:
             pkg install -y \
               bash \
               sudo \
-              libev \
               cmake \
               postgresql17-server \
               postgresql17-contrib \

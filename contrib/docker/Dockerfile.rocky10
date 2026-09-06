@@ -46,7 +46,6 @@ RUN rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch
         bzip2-devel \
         libpq \
         libpq-devel \
-        libev-devel \
         python3-docutils \
         doxygen \
         openssl-devel \

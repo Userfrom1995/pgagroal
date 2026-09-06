@@ -43,7 +43,6 @@ RUN apk add --no-cache \
     libpq \
     libpq-dev \
     musl-dev \
-    libev-dev \
     py-docutils \
     doxygen graphviz \
     libatomic \

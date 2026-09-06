@@ -929,7 +929,7 @@ pgagroal_update_server_state(int slot, int socket, SSL* ssl)
 
    if (process_server_parameters(server, server_parameters))
    {
-      pgagroal_log_trace("uanble to process server_parameters for %s", config->servers[server].name);
+      pgagroal_log_trace("unable to process server_parameters for %s", config->servers[server].name);
       goto error;
    }
 

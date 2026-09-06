@@ -18,6 +18,7 @@ This section contains reference links used throughout the manual.
 - **CMake**: https://cmake.org
 - **Make**: https://www.gnu.org/software/make/
 - **libev**: http://software.schmorp.de/pkg/libev.html
+- **liburing**: https://github.com/axboe/liburing
 - **OpenSSL**: http://www.openssl.org/
 - **systemd**: https://www.freedesktop.org/wiki/Software/systemd/
 - **rst2man**: https://docutils.sourceforge.io/
@@ -107,6 +108,7 @@ This section contains reference links used throughout the manual.
   [cmake]: https://cmake.org
   [make]: https://www.gnu.org/software/make/
   [libev]: http://software.schmorp.de/pkg/libev.html
+  [liburing]: https://github.com/axboe/liburing
   [openssl]: http://www.openssl.org/
   [systemd]: https://www.freedesktop.org/wiki/Software/systemd/
   [rst2man]: https://docutils.sourceforge.io/
@@ -136,7 +138,7 @@ This section contains reference links used throughout the manual.
 <!-- src/include -->
 [shmem_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/shmem.h
 [pgagroal_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/pgagroal.h
-[messge_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/message.h
+[message_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/message.h
 [network_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/network.h
 [memory_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/memory.h
 [management_h]: https://github.com/pgagroal/pgagroal/blob/master/src/include/management.h

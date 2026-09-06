@@ -1611,7 +1611,7 @@ accept_main_cb(struct io_watcher* watcher)
        * children processes to be independent. */
       if (setpgid(0, 0) == -1)
       {
-         pgagroal_log_error("setpgid error: %s", __func__, strerror(errno));
+         pgagroal_log_error("%s: setpgid error: %s", __func__, strerror(errno));
          exit(1);
       }
 
