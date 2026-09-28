@@ -621,7 +621,7 @@ bind_host(const char* hostname, int port, int** fds, int* length, int* buffer_si
       pgagroal_log_fatal("Couldn't allocate memory while binding host");
       return 1;
    }
-   sprintf(sport, "%d", port);
+   pgagroal_snprintf(sport, 6, "%d", port);
 
    /* Find all SOCK_STREAM addresses */
    memset(&hints, 0, sizeof hints);

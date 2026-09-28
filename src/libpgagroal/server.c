@@ -1303,8 +1303,8 @@ failover(int old_primary)
       memset(&old_primary_port, 0, sizeof(old_primary_port));
       memset(&new_primary_port, 0, sizeof(new_primary_port));
 
-      sprintf(&old_primary_port[0], "%d", config->servers[old_primary].port);
-      sprintf(&new_primary_port[0], "%d", config->servers[new_primary].port);
+      pgagroal_snprintf(&old_primary_port[0], sizeof(old_primary_port), "%d", config->servers[old_primary].port);
+      pgagroal_snprintf(&new_primary_port[0], sizeof(new_primary_port), "%d", config->servers[new_primary].port);
 
       execl(config->failover_script, "pgagroal_failover",
             config->servers[old_primary].host, old_primary_port,
