@@ -27,6 +27,7 @@
  */
 
 #include <mctf.h>
+#include <mctf_logslice.h>
 
 #include <errno.h>
 #include <setjmp.h>
@@ -290,13 +291,16 @@ mctf_cleanup(void)
    memset(&g_runner, 0, sizeof(g_runner));
 }
 
-/* Register a test */
+/* Register a test with additional flags */
 void
-mctf_register_test(const char* name, const char* module, const char* file, mctf_test_func_t func)
+mctf_register_test_with_flags(const char* name, const char* module, const char* file, mctf_test_func_t func, bool is_negative)
 {
    mctf_register_test_with_timeout(name, module, file, func, MCTF_DEFAULT_TIMEOUT_SECONDS);
+   if (g_runner.tests != NULL)
+   {
+      g_runner.tests->is_negative = is_negative;
+   }
 }
-
 /* Register a test with a non-default per-test timeout (0 = no timeout) */
 void
 mctf_register_test_with_timeout(const char* name, const char* module, const char* file,
@@ -343,9 +347,17 @@ mctf_register_test_with_timeout(const char* name, const char* module, const char
 
    test->func = func;
    test->timeout_seconds = timeout_seconds;
+   test->is_negative = false;
    test->next = g_runner.tests;
    g_runner.tests = test;
    g_runner.test_count++;
+}
+
+/* Register a test (default positive test) */
+void
+mctf_register_test(const char* name, const char* module, const char* file, mctf_test_func_t func)
+{
+   mctf_register_test_with_flags(name, module, file, func, false);
 }
 
 /* Check if test matches filter */
@@ -460,6 +472,15 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       result->timed_out = false;
       result->error_code = 0;
       result->error_message = NULL;
+      result->log_offset_start = -1;
+      result->log_offset_end = -1;
+      result->has_error_log = false;
+
+      {
+         off_t log_start = -1;
+         mctf_capture_log_boundary(&log_start);
+         result->log_offset_start = (long)log_start;
+      }
 
       struct timespec start_time, end_time;
       clock_gettime(CLOCK_MONOTONIC, &start_time);
@@ -497,6 +518,12 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       }
       alarm(0);
       sigaction(SIGALRM, &sa_prev, NULL);
+
+      {
+         off_t log_end = -1;
+         mctf_capture_log_boundary(&log_end);
+         result->log_offset_end = (long)log_end;
+      }
 
       clock_gettime(CLOCK_MONOTONIC, &end_time);
 
@@ -536,7 +563,7 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       else if (ret == MCTF_CODE_SKIPPED)
       {
          result->skipped = true;
-         result->error_code = mctf_errno; /* Store line number */
+         result->error_code = mctf_errno;                                  /* Store line number */
          result->error_message = mctf_errmsg ? strdup(mctf_errmsg) : NULL; /* Store skip message */
          g_runner.skipped_count++;
 
@@ -554,10 +581,36 @@ mctf_run_tests(mctf_filter_type_t filter_type, const char* filter)
       }
       else if (ret == 0 && mctf_errno == 0)
       {
-         result->passed = true;
-         g_runner.passed_count++;
-         mctf_logf("%s (%02ld:%02ld:%02ld,%03ld) [PASS]\n",
-                   test->name, hours, minutes, seconds, milliseconds);
+         bool has_log_errors = false;
+         char* log_error_summary = NULL;
+
+         mctf_analyze_and_write_test_log_slice(test->module,
+                                               test->name,
+                                               result->log_offset_start,
+                                               result->log_offset_end,
+                                               &has_log_errors,
+                                               &log_error_summary);
+         result->has_error_log = has_log_errors;
+
+         if (has_log_errors && !test->is_negative)
+         {
+            result->passed = false;
+            result->error_message = log_error_summary != NULL ? log_error_summary : strdup("Log errors detected in pgagroal.log");
+            g_runner.failed_count++;
+            mctf_logf("  %s (%02ld:%02ld:%02ld,%03ld) [FAIL]\n",
+                      test->name, hours, minutes, seconds, milliseconds);
+         }
+         else
+         {
+            if (log_error_summary != NULL)
+            {
+               free(log_error_summary);
+            }
+            result->passed = true;
+            g_runner.passed_count++;
+            mctf_logf("%s (%02ld:%02ld:%02ld,%03ld) [PASS]\n",
+                      test->name, hours, minutes, seconds, milliseconds);
+         }
       }
       else
       {
@@ -660,4 +713,15 @@ mctf_get_results(size_t* count)
       *count = g_runner.result_count;
    }
    return g_runner.results;
+}
+
+bool
+mctf_result_has_error_log(size_t result_index)
+{
+   if (result_index >= g_runner.result_count)
+   {
+      return false;
+   }
+
+   return g_runner.results[result_index].has_error_log;
 }

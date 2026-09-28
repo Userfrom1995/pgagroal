@@ -73,6 +73,7 @@ typedef struct mctf_test
    char* file;                   /**< Source file where the test is defined. */
    mctf_test_func_t func;        /**< Function implementing the test. */
    unsigned int timeout_seconds; /**< Per-test wall-clock budget in seconds (0 = no timeout). */
+   bool is_negative;             /**< True if this is a negative test. */
    struct mctf_test* next;       /**< Pointer to the next test in the registration list. */
 } mctf_test_t;
 
@@ -90,6 +91,9 @@ typedef struct mctf_result
    int error_code;        /**< Error code associated with a failure or skip. */
    char* error_message;   /**< Dynamically allocated, human readable error message. */
    long elapsed_ms;       /**< Execution time of the test in milliseconds. */
+   long log_offset_start; /**< Start offset in pgagroal log for this test, or -1 if unavailable. */
+   long log_offset_end;   /**< End offset in pgagroal log for this test, or -1 if unavailable. */
+   bool has_error_log;    /**< True if an ERROR-level line was observed in this test log slice. */
 } mctf_result_t;
 
 /**
@@ -127,6 +131,17 @@ void
 mctf_register_test_with_timeout(const char* name, const char* module, const char* file,
                                 mctf_test_func_t func, unsigned int timeout_seconds);
 
+/**
+ * Register a test function with additional flags.
+ * @param name The test name
+ * @param module The module name
+ * @param file The source file name
+ * @param func The test function
+ * @param is_negative Whether this test is a negative test (expects errors in logs)
+ */
+void
+mctf_register_test_with_flags(const char* name, const char* module, const char* file, mctf_test_func_t func, bool is_negative);
+
 /* Extract module name from file path */
 const char*
 mctf_extract_module_name(const char* file_path);
@@ -159,6 +174,10 @@ mctf_log_environment(void);
 const mctf_result_t*
 mctf_get_results(size_t* count);
 
+/* Return true if a result contains ERROR-level log output. */
+bool
+mctf_result_has_error_log(size_t result_index);
+
 /* Internal helper: format error message */
 char*
 mctf_format_error(const char* format, ...);
@@ -186,12 +205,29 @@ mctf_format_error(const char* format, ...);
  * MCTF_TEST(name, secs) sets an explicit wall-clock budget for tests that
  * legitimately run longer. */
 #define MCTF_TEST(...) MCTF_TEST_SELECT(__VA_ARGS__, MCTF_TEST_WITH_TIMEOUT, MCTF_TEST_DEFAULT)(__VA_ARGS__)
-
 /* Test registration macro without any timeout. An explicit opt-out for tests
  * whose duration is unbounded by design; a hang in such a test stalls the run
  * until the CI job timeout, so prefer MCTF_TEST(name, secs) where possible. */
 #define MCTF_TEST_NO_TIMEOUT(test_name) MCTF_TEST_IMPL(test_name, 0)
 
+/**
+ * Define and register a negative test function.
+ *
+ * Usage: MCTF_TEST_NEGATIVE(test_function_name) { ... }
+ * The module name is automatically extracted from the source file name.
+ * Negative tests are allowed to produce errors in pgagroal.log and will be
+ * treated differently by log validation.
+ */
+#define MCTF_TEST_NEGATIVE(name)                                                          \
+   static int name(void);                                                                 \
+   static void __attribute__((constructor)) mctf_register_negative_##name(void)           \
+   {                                                                                      \
+      const char* file_path = __FILE__;                                                   \
+      const char* filename = mctf_extract_filename(file_path);                            \
+      mctf_register_test_with_flags(#name, mctf_extract_module_name(file_path), filename, \
+                                    name, true);                                          \
+   }                                                                                      \
+   static int name(void)
 /* Assertion macro with cleanup label and optional message */
 #define MCTF_ASSERT(condition, error_label, ...)                                 \
    do                                                                            \

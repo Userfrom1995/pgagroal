@@ -487,7 +487,7 @@ cleanup:
 /**
  * Test: Buffer encryption tamper detection.
  */
-MCTF_TEST(test_aes_buffer_tamper_fails)
+MCTF_TEST_NEGATIVE(test_aes_buffer_tamper_fails)
 {
    MCTF_ASSERT(setup_mock_master_key() == 0, cleanup, "mock master key setup failed");
    char* plaintext = "tamper-test-data";

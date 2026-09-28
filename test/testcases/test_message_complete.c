@@ -196,7 +196,7 @@ cleanup:
 }
 
 /* A header whose declared length cannot be valid is rejected. */
-MCTF_TEST(test_complete_message_invalid_declared_length)
+MCTF_TEST_NEGATIVE(test_complete_message_invalid_declared_length)
 {
    int sv[2] = {-1, -1};
    char buffer[8];
