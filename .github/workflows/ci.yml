@@ -190,7 +190,7 @@ jobs:
     needs: [format-check]
     runs-on: macos-latest
     name: macOS (${{ matrix.build_type }}, ${{ matrix.pipeline }})
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       matrix:
         build_type: [Debug, Release]
@@ -345,6 +345,7 @@ jobs:
           run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false
           run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false
           run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1000 900 false
 
           echo "================================================================================"
           echo "STEP 2: Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)"
@@ -380,6 +381,7 @@ jobs:
           run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1 60 true
           run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 10 120 true
           run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 100 300 true
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1000 900 true
 
           echo "================================================================================"
           echo "STEP 4: Shutting down pgagroal"
@@ -406,7 +408,7 @@ jobs:
     needs: [format-check]
     runs-on: ubuntu-latest
     name: FreeBSD (${{ matrix.build_type }}, ${{ matrix.pipeline }})
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       matrix:
         compiler: [clang]
@@ -613,6 +615,7 @@ jobs:
           run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false
           run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false
           run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1000 900 false
 
           echo "================================================================================"
           echo "STEP 2: Configuring and starting pgagroal ($PIPELINE pipeline)"
@@ -648,6 +651,7 @@ jobs:
           run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1 60 true
           run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 10 120 true
           run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 100 300 true
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1000 900 true
 
           echo "================================================================================"
           echo "STEP 4: Shutting down pgagroal"
