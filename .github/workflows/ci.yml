@@ -5,10 +5,12 @@ on:
     branches:
       - master
       - 2.0.x
+      - kqueue_flags
   pull_request:
     branches:
       - master
       - 2.0.x
+      - kqueue_flags
   workflow_dispatch:
 
 jobs:
@@ -187,6 +189,13 @@ jobs:
   build-macos:
     needs: [format-check]
     runs-on: macos-latest
+    name: macOS (${{ matrix.build_type }}, ${{ matrix.pipeline }})
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+        pipeline: [performance, session, transaction]
+      fail-fast: false
     env:
       PGAGROAL_ROOT: ${{ github.workspace }}
       BUILD_DIR: ${{ github.workspace }}/build
@@ -205,7 +214,7 @@ jobs:
           export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
           mkdir -p build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ..
           make -j$(sysctl -n hw.ncpu)
 
       - name: Install and start PostgreSQL
@@ -226,35 +235,98 @@ jobs:
             sleep 1
           done
 
-      - name: Run pgagroal and verify it responds to ping
+      - name: Run pgbench initialization tests (Direct and pgagroal)
         run: |
-          mkdir -p /tmp/pgagroal-macos-test
-          cp doc/etc/pgagroal.conf doc/etc/pgagroal_hba.conf /tmp/pgagroal-macos-test/
-          sed -i '' "s|unix_socket_dir = /tmp/|unix_socket_dir = /tmp/pgagroal-macos-test/|" /tmp/pgagroal-macos-test/pgagroal.conf
+          PG_PREFIX=$(brew --prefix postgresql${{ env.POSTGRESQL_VERSION }})
+          export PATH="$PG_PREFIX/bin:$PATH"
 
-          # Note: pgagroal's -d/--daemon flag requires non-console logging, which the
-          # sample config doesn't set, so background it via the shell instead (this also
-          # matches how the macOS job used to smoke-test pgagroal before it was dropped).
-          "$BUILD_DIR/src/pgagroal" -c /tmp/pgagroal-macos-test/pgagroal.conf -a /tmp/pgagroal-macos-test/pgagroal_hba.conf > /tmp/pgagroal-macos-test/pgagroal.log 2>&1 &
-          sleep 5
+          # Setup test database and user
+          psql -h localhost -p 5432 -U $(whoami) -d postgres -c "CREATE USER pgbench_user WITH PASSWORD 'pgbench_pass' SUPERUSER;" 2>/dev/null || psql -h localhost -p 5432 -U $(whoami) -d postgres -c "ALTER USER pgbench_user WITH PASSWORD 'pgbench_pass';"
+          createdb -h localhost -p 5432 -U $(whoami) -O pgbench_user pgbench_test 2>/dev/null || true
 
-          "$BUILD_DIR/src/pgagroal-cli" -c /tmp/pgagroal-macos-test/pgagroal.conf ping
-          ping_status=$?
+          echo "=========================================="
+          echo "Running pgbench directly against PostgreSQL"
+          echo "=========================================="
+          for scale in 1 10 100; do
+            echo "--- Direct PostgreSQL init (scale: $scale) ---"
+            PGPASSWORD=pgbench_pass pgbench -i -s "$scale" -h 127.0.0.1 -p 5432 -U pgbench_user -d pgbench_test
+          done
 
-          "$BUILD_DIR/src/pgagroal-cli" -c /tmp/pgagroal-macos-test/pgagroal.conf shutdown || true
+          echo "=========================================="
+          echo "Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)"
+          echo "=========================================="
+          CONF_DIR="/tmp/pgagroal-macos-test"
+          mkdir -p "$CONF_DIR"
+          mkdir -m 0700 -p "$HOME/.pgagroal"
+          chmod 0700 "$HOME/.pgagroal"
 
-          cat /tmp/pgagroal-macos-test/pgagroal.log
-          exit $ping_status
+          printf "%s\n" \
+            "[pgagroal]" \
+            "host = *" \
+            "port = 2345" \
+            "" \
+            "log_type = console" \
+            "log_level = info" \
+            "" \
+            "max_connections = 100" \
+            "idle_timeout = 600" \
+            "validation = off" \
+            "unix_socket_dir = $CONF_DIR/" \
+            "pipeline = ${{ matrix.pipeline }}" \
+            "allow_unknown_users = false" \
+            "" \
+            "[primary]" \
+            "host = 127.0.0.1" \
+            "port = 5432" > "$CONF_DIR/pgagroal.conf"
+
+          printf "%s\n" \
+            "host all all all trust" > "$CONF_DIR/pgagroal_hba.conf"
+
+          printf "%s\n" \
+            "pgbench_test pgbench_user 20 10 2" \
+            "postgres pgbench_user 20 10 2" > "$CONF_DIR/pgagroal_databases.conf"
+
+          rm -f "$HOME/.pgagroal/master.key" "$CONF_DIR/pgagroal_users.conf"
+          "$BUILD_DIR/src/pgagroal-admin" master-key -P pgbench_pass
+          "$BUILD_DIR/src/pgagroal-admin" -f "$CONF_DIR/pgagroal_users.conf" -U pgbench_user -P pgbench_pass user add
+
+          "$BUILD_DIR/src/pgagroal" -c "$CONF_DIR/pgagroal.conf" -a "$CONF_DIR/pgagroal_hba.conf" -u "$CONF_DIR/pgagroal_users.conf" -l "$CONF_DIR/pgagroal_databases.conf" > "$CONF_DIR/pgagroal.log" 2>&1 &
+          PGAGROAL_PID=$!
+
+          for i in $(seq 1 10); do
+            if "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping >/dev/null 2>&1; then
+              echo "pgagroal is ready"
+              break
+            fi
+            if [ "$i" -eq 10 ]; then
+              echo "pgagroal failed to start. Log:"
+              cat "$CONF_DIR/pgagroal.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "=========================================="
+          echo "Running pgbench through pgagroal pooler (pipeline: ${{ matrix.pipeline }})"
+          echo "=========================================="
+          for scale in 1 10 100; do
+            echo "--- pgagroal init (pipeline: ${{ matrix.pipeline }}, scale: $scale) ---"
+            PGPASSWORD=pgbench_pass pgbench -i -s "$scale" -h 127.0.0.1 -p 2345 -U pgbench_user -d pgbench_test
+          done
+
+          "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" shutdown || kill -9 $PGAGROAL_PID 2>/dev/null || true
+          cat "$CONF_DIR/pgagroal.log"
 
   build-freebsd:
     needs: [format-check]
     runs-on: ubuntu-latest
-    name: FreeBSD Build and Test
+    name: FreeBSD (${{ matrix.build_type }}, ${{ matrix.pipeline }})
     timeout-minutes: 30
     strategy:
       matrix:
         compiler: [clang]
         build_type: [Debug, Release]
+        pipeline: [performance, session, transaction]
       fail-fast: false
 
     steps:
@@ -313,6 +385,102 @@ jobs:
           cd $GITHUB_WORKSPACE/build
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} "$GITHUB_WORKSPACE"
           make -j$(sysctl -n hw.ncpu)
+
+      - name: Run pgbench initialization tests (Direct and pgagroal)
+        shell: freebsd {0}
+        run: |
+          export PATH=/usr/local/bin:$PATH
+
+          # Start PostgreSQL service on FreeBSD
+          sysrc postgresql_enable="YES"
+          service postgresql initdb || true
+          service postgresql start || true
+
+          for i in $(seq 1 30); do
+            if pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "PostgreSQL did not become ready in time"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Create test user and database
+          su -m postgres -c "psql -h 127.0.0.1 -p 5432 -c \"CREATE USER pgbench_user WITH PASSWORD 'pgbench_pass' SUPERUSER;\"" 2>/dev/null || su -m postgres -c "psql -h 127.0.0.1 -p 5432 -c \"ALTER USER pgbench_user WITH PASSWORD 'pgbench_pass';\""
+          su -m postgres -c "createdb -h 127.0.0.1 -p 5432 -O pgbench_user pgbench_test" 2>/dev/null || true
+
+          # Create unprivileged runner user (pgagroal forbids running as root)
+          id -u runner >/dev/null 2>&1 || pw useradd runner -m -s /bin/sh
+          chown -R runner:runner "$GITHUB_WORKSPACE"
+          mkdir -p /tmp/pgagroal-freebsd-test
+          chown -R runner:runner /tmp/pgagroal-freebsd-test
+
+          printf "%s\n" \
+            "#!/bin/sh" \
+            "set -e" \
+            "export PATH=/usr/local/bin:\$PATH" \
+            "" \
+            "echo ==========================================" \
+            "echo Running pgbench directly against PostgreSQL" \
+            "echo ==========================================" \
+            "for scale in 1 10 100; do" \
+            "  echo \"--- Direct PostgreSQL init (scale: \$scale) ---\"" \
+            "  PGPASSWORD=pgbench_pass pgbench -i -s \"\$scale\" -h 127.0.0.1 -p 5432 -U pgbench_user -d pgbench_test" \
+            "done" \
+            "" \
+            "echo ==========================================" \
+            "echo \"Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)\"" \
+            "echo ==========================================" \
+            "BUILD_DIR=\"$GITHUB_WORKSPACE/build\"" \
+            "CONF_DIR=\"/tmp/pgagroal-freebsd-test\"" \
+            "mkdir -p \"\$CONF_DIR\"" \
+            "mkdir -m 0700 -p \"\$HOME/.pgagroal\"" \
+            "chmod 0700 \"\$HOME/.pgagroal\"" \
+            "" \
+            "printf '[pgagroal]\nhost = *\nport = 2345\n\nlog_type = console\nlog_level = info\n\nmax_connections = 100\nidle_timeout = 600\nvalidation = off\nunix_socket_dir = %s/\npipeline = %s\nallow_unknown_users = false\n\n[primary]\nhost = 127.0.0.1\nport = 5432\n' \"\$CONF_DIR\" \"${{ matrix.pipeline }}\" > \"\$CONF_DIR/pgagroal.conf\"" \
+            "" \
+            "printf 'host all all all trust\n' > \"\$CONF_DIR/pgagroal_hba.conf\"" \
+            "" \
+            "printf 'pgbench_test pgbench_user 20 10 2\npostgres pgbench_user 20 10 2\n' > \"\$CONF_DIR/pgagroal_databases.conf\"" \
+            "" \
+            "rm -f \"\$HOME/.pgagroal/master.key\" \"\$CONF_DIR/pgagroal_users.conf\"" \
+            "\"\$BUILD_DIR/src/pgagroal-admin\" master-key -P pgbench_pass" \
+            "\"\$BUILD_DIR/src/pgagroal-admin\" -f \"\$CONF_DIR/pgagroal_users.conf\" -U pgbench_user -P pgbench_pass user add" \
+            "" \
+            "\"\$BUILD_DIR/src/pgagroal\" -c \"\$CONF_DIR/pgagroal.conf\" -a \"\$CONF_DIR/pgagroal_hba.conf\" -u \"\$CONF_DIR/pgagroal_users.conf\" -l \"\$CONF_DIR/pgagroal_databases.conf\" > \"\$CONF_DIR/pgagroal.log\" 2>&1 &" \
+            "PGAGROAL_PID=\$!" \
+            "" \
+            "for i in \$(seq 1 10); do" \
+            "  if \"\$BUILD_DIR/src/pgagroal-cli\" -c \"\$CONF_DIR/pgagroal.conf\" ping >/dev/null 2>&1; then" \
+            "    echo pgagroal is ready" \
+            "    break" \
+            "  fi" \
+            "  if [ \"\$i\" -eq 10 ]; then" \
+            "    echo \"pgagroal failed to start. Log:\"" \
+            "    cat \"\$CONF_DIR/pgagroal.log\"" \
+            "    exit 1" \
+            "  fi" \
+            "  sleep 1" \
+            "done" \
+            "" \
+            "echo ==========================================" \
+            "echo \"Running pgbench through pgagroal pooler (pipeline: ${{ matrix.pipeline }})\"" \
+            "echo ==========================================" \
+            "for scale in 1 10 100; do" \
+            "  echo \"--- pgagroal init (pipeline: ${{ matrix.pipeline }}, scale: \$scale) ---\"" \
+            "  PGPASSWORD=pgbench_pass pgbench -i -s \"\$scale\" -h 127.0.0.1 -p 2345 -U pgbench_user -d pgbench_test" \
+            "done" \
+            "" \
+            "\"\$BUILD_DIR/src/pgagroal-cli\" -c \"\$CONF_DIR/pgagroal.conf\" shutdown || kill -9 \$PGAGROAL_PID 2>/dev/null || true" \
+            "cat \"\$CONF_DIR/pgagroal.log\"" > /tmp/run_pgagroal_freebsd.sh
+
+          chmod +x /tmp/run_pgagroal_freebsd.sh
+          chown runner:runner /tmp/run_pgagroal_freebsd.sh
+          su - runner -c "/tmp/run_pgagroal_freebsd.sh"
+
 
   build-rpm:
     needs: [format-check]
