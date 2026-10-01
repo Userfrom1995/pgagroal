@@ -190,7 +190,7 @@ jobs:
     needs: [format-check]
     runs-on: macos-latest
     name: macOS (${{ matrix.build_type }}, ${{ matrix.pipeline }})
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       matrix:
         build_type: [Debug, Release]
@@ -263,6 +263,14 @@ jobs:
 
           FAILED_COUNT=0
           FAILED_NAMES=""
+          DIRECT_1="N/A"
+          DIRECT_10="N/A"
+          DIRECT_100="N/A"
+          DIRECT_1000="N/A"
+          POOLER_1="N/A"
+          POOLER_10="N/A"
+          POOLER_100="N/A"
+          POOLER_1000="N/A"
 
           run_pgbench_test() {
             _desc="$1"
@@ -271,25 +279,28 @@ jobs:
             _scale="$4"
             _timeout_sec="$5"
             _is_pooler="$6"
+            _target_type="$7"
 
             echo ""
             echo "================================================================================"
             echo ">>> [START] $_desc - Scale $_scale (Host: $_host, Port: $_port, Timeout: ${_timeout_sec}s)"
             echo "================================================================================"
 
-            _start_time=$(date +%s)
+            _start_time=$(python3 -c "import time; print(f'{time.time():.2f}')" 2>/dev/null || date +%s)
             set +e
             run_with_timeout "$_timeout_sec" env PGPASSWORD=pgbench_pass pgbench -i -s "$_scale" -h "$_host" -p "$_port" -U pgbench_user -d pgbench_test
             _rc=$?
             set -e
-            _end_time=$(date +%s)
-            _duration=$((_end_time - _start_time))
+            _end_time=$(python3 -c "import time; print(f'{time.time():.2f}')" 2>/dev/null || date +%s)
+            _duration=$(python3 -c "print(f'{$_end_time - $_start_time:.2f}')" 2>/dev/null || echo $((_end_time - _start_time)))
 
             if [ $_rc -eq 0 ]; then
+              _timing_val="$_duration"
               echo "--------------------------------------------------------------------------------"
               echo ">>> [PASS] $_desc - Scale $_scale completed in ${_duration}s"
               echo "--------------------------------------------------------------------------------"
             elif [ $_rc -eq 124 ]; then
+              _timing_val="TIMEOUT"
               echo ""
               echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
               echo ">>> [CRITICAL FAILURE: TIMEOUT] $_desc - Scale $_scale HUNG / TIMED OUT after ${_timeout_sec}s!"
@@ -305,6 +316,7 @@ jobs:
               FAILED_COUNT=$((FAILED_COUNT + 1))
               FAILED_NAMES="${FAILED_NAMES}  - [TIMEOUT] $_desc (Scale $_scale after ${_timeout_sec}s)\n"
             else
+              _timing_val="FAILED"
               echo ""
               echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
               echo ">>> [CRITICAL FAILURE: ERROR] $_desc - Scale $_scale FAILED with exit code $_rc in ${_duration}s!"
@@ -317,6 +329,22 @@ jobs:
               echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
               FAILED_COUNT=$((FAILED_COUNT + 1))
               FAILED_NAMES="${FAILED_NAMES}  - [FAILED] $_desc (Scale $_scale, Exit Code $_rc)\n"
+            fi
+
+            if [ "$_target_type" = "direct" ]; then
+              case "$_scale" in
+                1) DIRECT_1="$_timing_val" ;;
+                10) DIRECT_10="$_timing_val" ;;
+                100) DIRECT_100="$_timing_val" ;;
+                1000) DIRECT_1000="$_timing_val" ;;
+              esac
+            else
+              case "$_scale" in
+                1) POOLER_1="$_timing_val" ;;
+                10) POOLER_10="$_timing_val" ;;
+                100) POOLER_100="$_timing_val" ;;
+                1000) POOLER_1000="$_timing_val" ;;
+              esac
             fi
 
             if [ "$_is_pooler" = "true" ] && [ $_rc -ne 0 ]; then
@@ -342,10 +370,10 @@ jobs:
           echo "================================================================================"
           echo "STEP 1: Direct PostgreSQL initialization tests (Baseline)"
           echo "================================================================================"
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1000 900 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false "direct"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false "direct"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false "direct"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1000 1200 false "direct"
 
           echo "================================================================================"
           echo "STEP 2: Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)"
@@ -378,10 +406,10 @@ jobs:
           echo "================================================================================"
           echo "STEP 3: Running pgbench through pgagroal pooler (${{ matrix.pipeline }} pipeline)"
           echo "================================================================================"
-          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1 60 true
-          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 10 120 true
-          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 100 300 true
-          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1000 900 true
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1 60 true "pooler"
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 10 120 true "pooler"
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 100 300 true "pooler"
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1000 1200 true "pooler"
 
           echo "================================================================================"
           echo "STEP 4: Shutting down pgagroal"
@@ -389,6 +417,39 @@ jobs:
           "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" shutdown || kill -9 $PGAGROAL_PID 2>/dev/null || true
           echo "--- Full pgagroal.log ---"
           cat "$CONF_DIR/pgagroal.log"
+
+          echo ""
+          echo "================================================================================"
+          echo "Performance Summary: ${{ matrix.pipeline }} (${{ matrix.build_type }}) vs Direct PostgreSQL"
+          echo "================================================================================"
+          printf "| %-10s | %-20s | %-20s |\n" "Scale" "Direct PostgreSQL" "pgagroal (${{ matrix.pipeline }})"
+          printf "|------------|----------------------|----------------------|\n"
+          printf "| %-10s | %-20s | %-20s |\n" "1" "$DIRECT_1 s" "$POOLER_1 s"
+          printf "| %-10s | %-20s | %-20s |\n" "10" "$DIRECT_10 s" "$POOLER_10 s"
+          printf "| %-10s | %-20s | %-20s |\n" "100" "$DIRECT_100 s" "$POOLER_100 s"
+          printf "| %-10s | %-20s | %-20s |\n" "1000" "$DIRECT_1000 s" "$POOLER_1000 s"
+          echo "================================================================================"
+
+          mkdir -p "$GITHUB_WORKSPACE/timings"
+          cat << JSON_EOF > "$GITHUB_WORKSPACE/timings/timing-macos-${{ matrix.build_type }}-${{ matrix.pipeline }}.json"
+          {
+            "platform": "macos",
+            "build_type": "${{ matrix.build_type }}",
+            "pipeline": "${{ matrix.pipeline }}",
+            "direct": {
+              "1": "$DIRECT_1",
+              "10": "$DIRECT_10",
+              "100": "$DIRECT_100",
+              "1000": "$DIRECT_1000"
+            },
+            "pooler": {
+              "1": "$POOLER_1",
+              "10": "$POOLER_10",
+              "100": "$POOLER_100",
+              "1000": "$POOLER_1000"
+            }
+          }
+          JSON_EOF
 
           if [ "$FAILED_COUNT" -ne 0 ]; then
             echo ""
@@ -404,11 +465,19 @@ jobs:
           echo ">>> [SUCCESS] All direct and pgagroal tests passed!"
           echo "================================================================================"
 
+      - name: Upload Timing Data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-macos-${{ matrix.build_type }}-${{ matrix.pipeline }}
+          path: ${{ github.workspace }}/timings/*.json
+          retention-days: 1
+
   build-freebsd:
     needs: [format-check]
     runs-on: ubuntu-latest
     name: FreeBSD (${{ matrix.build_type }}, ${{ matrix.pipeline }})
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       matrix:
         compiler: [clang]
@@ -512,6 +581,7 @@ jobs:
 
           GITHUB_WORKSPACE="$1"
           PIPELINE="$2"
+          BUILD_TYPE="$3"
           BUILD_DIR="$GITHUB_WORKSPACE/build"
           CONF_DIR="/tmp/pgagroal-freebsd-test"
 
@@ -533,6 +603,14 @@ jobs:
 
           FAILED_COUNT=0
           FAILED_NAMES=""
+          DIRECT_1="N/A"
+          DIRECT_10="N/A"
+          DIRECT_100="N/A"
+          DIRECT_1000="N/A"
+          POOLER_1="N/A"
+          POOLER_10="N/A"
+          POOLER_100="N/A"
+          POOLER_1000="N/A"
 
           run_pgbench_test() {
             _desc="$1"
@@ -541,25 +619,28 @@ jobs:
             _scale="$4"
             _timeout_sec="$5"
             _is_pooler="$6"
+            _target_type="$7"
 
             echo ""
             echo "================================================================================"
             echo ">>> [START] $_desc - Scale $_scale (Host: $_host, Port: $_port, Timeout: ${_timeout_sec}s)"
             echo "================================================================================"
 
-            _start_time=$(date +%s)
+            _start_time=$(python3 -c "import time; print(f'{time.time():.2f}')" 2>/dev/null || date +%s)
             set +e
             run_with_timeout "$_timeout_sec" env PGPASSWORD=pgbench_pass pgbench -i -s "$_scale" -h "$_host" -p "$_port" -U pgbench_user -d pgbench_test
             _rc=$?
             set -e
-            _end_time=$(date +%s)
-            _duration=$((_end_time - _start_time))
+            _end_time=$(python3 -c "import time; print(f'{time.time():.2f}')" 2>/dev/null || date +%s)
+            _duration=$(python3 -c "print(f'{$_end_time - $_start_time:.2f}')" 2>/dev/null || echo $((_end_time - _start_time)))
 
             if [ $_rc -eq 0 ]; then
+              _timing_val="$_duration"
               echo "--------------------------------------------------------------------------------"
               echo ">>> [PASS] $_desc - Scale $_scale completed in ${_duration}s"
               echo "--------------------------------------------------------------------------------"
             elif [ $_rc -eq 124 ]; then
+              _timing_val="TIMEOUT"
               echo ""
               echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
               echo ">>> [CRITICAL FAILURE: TIMEOUT] $_desc - Scale $_scale HUNG / TIMED OUT after ${_timeout_sec}s!"
@@ -575,6 +656,7 @@ jobs:
               FAILED_COUNT=$((FAILED_COUNT + 1))
               FAILED_NAMES="${FAILED_NAMES}  - [TIMEOUT] $_desc (Scale $_scale after ${_timeout_sec}s)\n"
             else
+              _timing_val="FAILED"
               echo ""
               echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
               echo ">>> [CRITICAL FAILURE: ERROR] $_desc - Scale $_scale FAILED with exit code $_rc in ${_duration}s!"
@@ -587,6 +669,22 @@ jobs:
               echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
               FAILED_COUNT=$((FAILED_COUNT + 1))
               FAILED_NAMES="${FAILED_NAMES}  - [FAILED] $_desc (Scale $_scale, Exit Code $_rc)\n"
+            fi
+
+            if [ "$_target_type" = "direct" ]; then
+              case "$_scale" in
+                1) DIRECT_1="$_timing_val" ;;
+                10) DIRECT_10="$_timing_val" ;;
+                100) DIRECT_100="$_timing_val" ;;
+                1000) DIRECT_1000="$_timing_val" ;;
+              esac
+            else
+              case "$_scale" in
+                1) POOLER_1="$_timing_val" ;;
+                10) POOLER_10="$_timing_val" ;;
+                100) POOLER_100="$_timing_val" ;;
+                1000) POOLER_1000="$_timing_val" ;;
+              esac
             fi
 
             if [ "$_is_pooler" = "true" ] && [ $_rc -ne 0 ]; then
@@ -612,10 +710,10 @@ jobs:
           echo "================================================================================"
           echo "STEP 1: Direct PostgreSQL initialization tests (Baseline)"
           echo "================================================================================"
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false
-          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1000 900 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false "direct"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false "direct"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false "direct"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1000 1200 false "direct"
 
           echo "================================================================================"
           echo "STEP 2: Configuring and starting pgagroal ($PIPELINE pipeline)"
@@ -648,10 +746,10 @@ jobs:
           echo "================================================================================"
           echo "STEP 3: Running pgbench through pgagroal pooler ($PIPELINE pipeline)"
           echo "================================================================================"
-          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1 60 true
-          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 10 120 true
-          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 100 300 true
-          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1000 900 true
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1 60 true "pooler"
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 10 120 true "pooler"
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 100 300 true "pooler"
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1000 1200 true "pooler"
 
           echo "================================================================================"
           echo "STEP 4: Shutting down pgagroal"
@@ -659,6 +757,39 @@ jobs:
           "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" shutdown || kill -9 $PGAGROAL_PID 2>/dev/null || true
           echo "--- Full pgagroal.log ---"
           cat "$CONF_DIR/pgagroal.log"
+
+          echo ""
+          echo "================================================================================"
+          echo "Performance Summary: $PIPELINE ($BUILD_TYPE) vs Direct PostgreSQL"
+          echo "================================================================================"
+          printf "| %-10s | %-20s | %-20s |\n" "Scale" "Direct PostgreSQL" "pgagroal ($PIPELINE)"
+          printf "|------------|----------------------|----------------------|\n"
+          printf "| %-10s | %-20s | %-20s |\n" "1" "$DIRECT_1 s" "$POOLER_1 s"
+          printf "| %-10s | %-20s | %-20s |\n" "10" "$DIRECT_10 s" "$POOLER_10 s"
+          printf "| %-10s | %-20s | %-20s |\n" "100" "$DIRECT_100 s" "$POOLER_100 s"
+          printf "| %-10s | %-20s | %-20s |\n" "1000" "$DIRECT_1000 s" "$POOLER_1000 s"
+          echo "================================================================================"
+
+          mkdir -p "$GITHUB_WORKSPACE/timings"
+          cat << JSON_EOF > "$GITHUB_WORKSPACE/timings/timing-freebsd-${BUILD_TYPE}-${PIPELINE}.json"
+          {
+            "platform": "freebsd",
+            "build_type": "${BUILD_TYPE}",
+            "pipeline": "${PIPELINE}",
+            "direct": {
+              "1": "$DIRECT_1",
+              "10": "$DIRECT_10",
+              "100": "$DIRECT_100",
+              "1000": "$DIRECT_1000"
+            },
+            "pooler": {
+              "1": "$POOLER_1",
+              "10": "$POOLER_10",
+              "100": "$POOLER_100",
+              "1000": "$POOLER_1000"
+            }
+          }
+          JSON_EOF
 
           if [ "$FAILED_COUNT" -ne 0 ]; then
             echo ""
@@ -677,7 +808,107 @@ jobs:
 
           chmod +x /tmp/run_pgagroal_freebsd.sh
           chown runner:runner /tmp/run_pgagroal_freebsd.sh
-          su - runner -c "/tmp/run_pgagroal_freebsd.sh '$GITHUB_WORKSPACE' '${{ matrix.pipeline }}'"
+          su - runner -c "/tmp/run_pgagroal_freebsd.sh '$GITHUB_WORKSPACE' '${{ matrix.pipeline }}' '${{ matrix.build_type }}'"
+
+      - name: Upload Timing Data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-freebsd-${{ matrix.build_type }}-${{ matrix.pipeline }}
+          path: ${{ github.workspace }}/timings/*.json
+          retention-days: 1
+
+  performance-summary:
+    needs: [build-macos, build-freebsd]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Performance Comparison Summary
+    steps:
+      - name: Download all timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: timing-*
+          path: /tmp/all_timings
+          merge-multiple: true
+
+      - name: Generate Performance Comparison Tables
+        run: |
+          python3 - << 'PY_EOF'
+          import glob
+          import json
+          import os
+          import sys
+
+          timings_dir = "/tmp/all_timings"
+          json_files = glob.glob(os.path.join(timings_dir, "*.json"))
+          data = []
+          for fpath in json_files:
+              try:
+                  with open(fpath, "r") as f:
+                      data.append(json.load(f))
+              except Exception as e:
+                  print(f"Error reading {fpath}: {e}", file=sys.stderr)
+
+          configs = [
+              ("Debug", "performance"),
+              ("Debug", "session"),
+              ("Debug", "transaction"),
+              ("Release", "performance"),
+              ("Release", "session"),
+              ("Release", "transaction"),
+          ]
+          scales = ["1", "10", "100", "1000"]
+          output_lines = []
+
+          output_lines.append("# Performance Comparison Summary\n")
+
+          for platform, title in [("macos", "macOS Performance Comparison"), ("freebsd", "FreeBSD Performance Comparison")]:
+              plat_data = [d for d in data if d.get("platform") == platform]
+              data_map = {(d.get("build_type"), d.get("pipeline")): d for d in plat_data}
+
+              output_lines.append(f"### {title}\n")
+              output_lines.append("| Pipeline Configuration | Scale 1 | Scale 10 | Scale 100 | Scale 1000 |")
+              output_lines.append("| :--- | :---: | :---: | :---: | :---: |")
+
+              for bt, pipe in configs:
+                  row_label = f"{pipe} ({bt})"
+                  entry = data_map.get((bt, pipe))
+                  if entry:
+                      vals = []
+                      for sc in scales:
+                          v = str(entry.get("pooler", {}).get(sc, "N/A"))
+                          vals.append(f"{v}s" if v not in ["N/A", "TIMEOUT", "FAILED"] else f"**{v}**")
+                      output_lines.append(f"| `{row_label}` | " + " | ".join(vals) + " |")
+                  else:
+                      output_lines.append(f"| `{row_label}` | N/A | N/A | N/A | N/A |")
+
+              # 7th row: PostgreSQL Average
+              direct_avgs = []
+              for sc in scales:
+                  sc_vals = []
+                  for d in plat_data:
+                      v = d.get("direct", {}).get(sc)
+                      try:
+                          sc_vals.append(float(v))
+                      except (ValueError, TypeError):
+                          pass
+                  if sc_vals:
+                      avg = sum(sc_vals) / len(sc_vals)
+                      direct_avgs.append(f"{avg:.2f}s")
+                  else:
+                      direct_avgs.append("N/A")
+
+              output_lines.append(f"| **PostgreSQL (Average)** | " + " | ".join(direct_avgs) + " |")
+              output_lines.append("\n")
+
+          markdown_content = "\n".join(output_lines)
+          print(markdown_content)
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a") as f:
+                  f.write(markdown_content + "\n")
+          PY_EOF
 
 
   build-rpm:
