@@ -244,47 +244,115 @@ jobs:
           psql -h localhost -p 5432 -U $(whoami) -d postgres -c "CREATE USER pgbench_user WITH PASSWORD 'pgbench_pass' SUPERUSER;" 2>/dev/null || psql -h localhost -p 5432 -U $(whoami) -d postgres -c "ALTER USER pgbench_user WITH PASSWORD 'pgbench_pass';"
           createdb -h localhost -p 5432 -U $(whoami) -O pgbench_user pgbench_test 2>/dev/null || true
 
-          echo "=========================================="
-          echo "Running pgbench directly against PostgreSQL"
-          echo "=========================================="
-          for scale in 1 10 100; do
-            echo "--- Direct PostgreSQL init (scale: $scale) ---"
-            PGPASSWORD=pgbench_pass pgbench -i -s "$scale" -h 127.0.0.1 -p 5432 -U pgbench_user -d pgbench_test
-          done
-
-          echo "=========================================="
-          echo "Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)"
-          echo "=========================================="
           CONF_DIR="/tmp/pgagroal-macos-test"
           mkdir -p "$CONF_DIR"
           mkdir -m 0700 -p "$HOME/.pgagroal"
           chmod 0700 "$HOME/.pgagroal"
 
-          printf "%s\n" \
-            "[pgagroal]" \
-            "host = *" \
-            "port = 2345" \
-            "" \
-            "log_type = console" \
-            "log_level = info" \
-            "" \
-            "max_connections = 100" \
-            "idle_timeout = 600" \
-            "validation = off" \
-            "unix_socket_dir = $CONF_DIR/" \
-            "pipeline = ${{ matrix.pipeline }}" \
-            "allow_unknown_users = false" \
-            "" \
-            "[primary]" \
-            "host = 127.0.0.1" \
-            "port = 5432" > "$CONF_DIR/pgagroal.conf"
+          run_with_timeout() {
+            _timeout_sec="$1"
+            shift
+            if command -v timeout >/dev/null 2>&1; then
+              timeout "$_timeout_sec" "$@"
+            elif command -v gtimeout >/dev/null 2>&1; then
+              gtimeout "$_timeout_sec" "$@"
+            else
+              python3 -c "import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:], timeout=int('$_timeout_sec')).returncode)" "$@"
+            fi
+          }
 
-          printf "%s\n" \
-            "host all all all trust" > "$CONF_DIR/pgagroal_hba.conf"
+          FAILED_COUNT=0
+          FAILED_NAMES=""
 
-          printf "%s\n" \
-            "pgbench_test pgbench_user 20 10 2" \
-            "postgres pgbench_user 20 10 2" > "$CONF_DIR/pgagroal_databases.conf"
+          run_pgbench_test() {
+            _desc="$1"
+            _host="$2"
+            _port="$3"
+            _scale="$4"
+            _timeout_sec="$5"
+            _is_pooler="$6"
+
+            echo ""
+            echo "================================================================================"
+            echo ">>> [START] $_desc - Scale $_scale (Host: $_host, Port: $_port, Timeout: ${_timeout_sec}s)"
+            echo "================================================================================"
+
+            _start_time=$(date +%s)
+            set +e
+            run_with_timeout "$_timeout_sec" env PGPASSWORD=pgbench_pass pgbench -i -s "$_scale" -h "$_host" -p "$_port" -U pgbench_user -d pgbench_test
+            _rc=$?
+            set -e
+            _end_time=$(date +%s)
+            _duration=$((_end_time - _start_time))
+
+            if [ $_rc -eq 0 ]; then
+              echo "--------------------------------------------------------------------------------"
+              echo ">>> [PASS] $_desc - Scale $_scale completed in ${_duration}s"
+              echo "--------------------------------------------------------------------------------"
+            elif [ $_rc -eq 124 ]; then
+              echo ""
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              echo ">>> [CRITICAL FAILURE: TIMEOUT] $_desc - Scale $_scale HUNG / TIMED OUT after ${_timeout_sec}s!"
+              echo "    pgbench stalled without completing and was terminated."
+              if [ "$_is_pooler" = "true" ]; then
+                echo "    This indicates an event loop hang in pgagroal kqueue (e.g. EV_CLEAR issue #1067)."
+                echo "    --- pgagroal status ---"
+                "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping || true
+                echo "    --- Recent pgagroal logs ---"
+                tail -n 100 "$CONF_DIR/pgagroal.log" 2>/dev/null || true
+              fi
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              FAILED_NAMES="${FAILED_NAMES}  - [TIMEOUT] $_desc (Scale $_scale after ${_timeout_sec}s)\n"
+            else
+              echo ""
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              echo ">>> [CRITICAL FAILURE: ERROR] $_desc - Scale $_scale FAILED with exit code $_rc in ${_duration}s!"
+              if [ "$_is_pooler" = "true" ]; then
+                echo "    --- pgagroal status ---"
+                "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping || true
+                echo "    --- Recent pgagroal logs ---"
+                tail -n 100 "$CONF_DIR/pgagroal.log" 2>/dev/null || true
+              fi
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              FAILED_NAMES="${FAILED_NAMES}  - [FAILED] $_desc (Scale $_scale, Exit Code $_rc)\n"
+            fi
+
+            if [ "$_is_pooler" = "true" ] && [ $_rc -ne 0 ]; then
+              echo ">>> Checking if pgagroal daemon is alive for subsequent tests..."
+              if ! "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping >/dev/null 2>&1; then
+                echo ">>> Restarting pgagroal daemon to allow subsequent tests to run independently..."
+                kill -9 $PGAGROAL_PID 2>/dev/null || true
+                sleep 1
+                rm -f "$CONF_DIR/pgagroal.sock"
+                "$BUILD_DIR/src/pgagroal" -c "$CONF_DIR/pgagroal.conf" -a "$CONF_DIR/pgagroal_hba.conf" -u "$CONF_DIR/pgagroal_users.conf" -l "$CONF_DIR/pgagroal_databases.conf" >> "$CONF_DIR/pgagroal.log" 2>&1 &
+                PGAGROAL_PID=$!
+                for _w in $(seq 1 10); do
+                  if "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping >/dev/null 2>&1; then
+                    echo ">>> pgagroal daemon ready after restart"
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+            fi
+          }
+
+          echo "================================================================================"
+          echo "STEP 1: Direct PostgreSQL initialization tests (Baseline)"
+          echo "================================================================================"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false
+
+          echo "================================================================================"
+          echo "STEP 2: Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)"
+          echo "================================================================================"
+          printf "[pgagroal]\nhost = *\nport = 2345\n\nlog_type = console\nlog_level = info\n\nmax_connections = 100\nidle_timeout = 600\nvalidation = off\nunix_socket_dir = %s/\npipeline = %s\nallow_unknown_users = false\n\n[primary]\nhost = 127.0.0.1\nport = 5432\n" "$CONF_DIR" "${{ matrix.pipeline }}" > "$CONF_DIR/pgagroal.conf"
+
+          printf "host all all all trust\n" > "$CONF_DIR/pgagroal_hba.conf"
+          printf "pgbench_test pgbench_user 20 10 2\npostgres pgbench_user 20 10 2\n" > "$CONF_DIR/pgagroal_databases.conf"
 
           rm -f "$HOME/.pgagroal/master.key" "$CONF_DIR/pgagroal_users.conf"
           "$BUILD_DIR/src/pgagroal-admin" master-key -P pgbench_pass
@@ -306,16 +374,33 @@ jobs:
             sleep 1
           done
 
-          echo "=========================================="
-          echo "Running pgbench through pgagroal pooler (pipeline: ${{ matrix.pipeline }})"
-          echo "=========================================="
-          for scale in 1 10 100; do
-            echo "--- pgagroal init (pipeline: ${{ matrix.pipeline }}, scale: $scale) ---"
-            PGPASSWORD=pgbench_pass pgbench -i -s "$scale" -h 127.0.0.1 -p 2345 -U pgbench_user -d pgbench_test
-          done
+          echo "================================================================================"
+          echo "STEP 3: Running pgbench through pgagroal pooler (${{ matrix.pipeline }} pipeline)"
+          echo "================================================================================"
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 1 60 true
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 10 120 true
+          run_pgbench_test "pgagroal pooler (${{ matrix.pipeline }})" 127.0.0.1 2345 100 300 true
 
+          echo "================================================================================"
+          echo "STEP 4: Shutting down pgagroal"
+          echo "================================================================================"
           "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" shutdown || kill -9 $PGAGROAL_PID 2>/dev/null || true
+          echo "--- Full pgagroal.log ---"
           cat "$CONF_DIR/pgagroal.log"
+
+          if [ "$FAILED_COUNT" -ne 0 ]; then
+            echo ""
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            echo ">>> [CRITICAL SUITE FAILURE] $FAILED_COUNT test(s) FAILED:"
+            printf "%b" "$FAILED_NAMES"
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            exit 1
+          fi
+
+          echo ""
+          echo "================================================================================"
+          echo ">>> [SUCCESS] All direct and pgagroal tests passed!"
+          echo "================================================================================"
 
   build-freebsd:
     needs: [format-check]
@@ -418,68 +503,177 @@ jobs:
           mkdir -p /tmp/pgagroal-freebsd-test
           chown -R runner:runner /tmp/pgagroal-freebsd-test
 
-          printf "%s\n" \
-            "#!/bin/sh" \
-            "set -e" \
-            "export PATH=/usr/local/bin:\$PATH" \
-            "" \
-            "echo ==========================================" \
-            "echo Running pgbench directly against PostgreSQL" \
-            "echo ==========================================" \
-            "for scale in 1 10 100; do" \
-            "  echo \"--- Direct PostgreSQL init (scale: \$scale) ---\"" \
-            "  PGPASSWORD=pgbench_pass pgbench -i -s \"\$scale\" -h 127.0.0.1 -p 5432 -U pgbench_user -d pgbench_test" \
-            "done" \
-            "" \
-            "echo ==========================================" \
-            "echo \"Configuring and starting pgagroal (${{ matrix.pipeline }} pipeline)\"" \
-            "echo ==========================================" \
-            "BUILD_DIR=\"$GITHUB_WORKSPACE/build\"" \
-            "CONF_DIR=\"/tmp/pgagroal-freebsd-test\"" \
-            "mkdir -p \"\$CONF_DIR\"" \
-            "mkdir -m 0700 -p \"\$HOME/.pgagroal\"" \
-            "chmod 0700 \"\$HOME/.pgagroal\"" \
-            "" \
-            "printf '[pgagroal]\nhost = *\nport = 2345\n\nlog_type = console\nlog_level = info\n\nmax_connections = 100\nidle_timeout = 600\nvalidation = off\nunix_socket_dir = %s/\npipeline = %s\nallow_unknown_users = false\n\n[primary]\nhost = 127.0.0.1\nport = 5432\n' \"\$CONF_DIR\" \"${{ matrix.pipeline }}\" > \"\$CONF_DIR/pgagroal.conf\"" \
-            "" \
-            "printf 'host all all all trust\n' > \"\$CONF_DIR/pgagroal_hba.conf\"" \
-            "" \
-            "printf 'pgbench_test pgbench_user 20 10 2\npostgres pgbench_user 20 10 2\n' > \"\$CONF_DIR/pgagroal_databases.conf\"" \
-            "" \
-            "rm -f \"\$HOME/.pgagroal/master.key\" \"\$CONF_DIR/pgagroal_users.conf\"" \
-            "\"\$BUILD_DIR/src/pgagroal-admin\" master-key -P pgbench_pass" \
-            "\"\$BUILD_DIR/src/pgagroal-admin\" -f \"\$CONF_DIR/pgagroal_users.conf\" -U pgbench_user -P pgbench_pass user add" \
-            "" \
-            "\"\$BUILD_DIR/src/pgagroal\" -c \"\$CONF_DIR/pgagroal.conf\" -a \"\$CONF_DIR/pgagroal_hba.conf\" -u \"\$CONF_DIR/pgagroal_users.conf\" -l \"\$CONF_DIR/pgagroal_databases.conf\" > \"\$CONF_DIR/pgagroal.log\" 2>&1 &" \
-            "PGAGROAL_PID=\$!" \
-            "" \
-            "for i in \$(seq 1 10); do" \
-            "  if \"\$BUILD_DIR/src/pgagroal-cli\" -c \"\$CONF_DIR/pgagroal.conf\" ping >/dev/null 2>&1; then" \
-            "    echo pgagroal is ready" \
-            "    break" \
-            "  fi" \
-            "  if [ \"\$i\" -eq 10 ]; then" \
-            "    echo \"pgagroal failed to start. Log:\"" \
-            "    cat \"\$CONF_DIR/pgagroal.log\"" \
-            "    exit 1" \
-            "  fi" \
-            "  sleep 1" \
-            "done" \
-            "" \
-            "echo ==========================================" \
-            "echo \"Running pgbench through pgagroal pooler (pipeline: ${{ matrix.pipeline }})\"" \
-            "echo ==========================================" \
-            "for scale in 1 10 100; do" \
-            "  echo \"--- pgagroal init (pipeline: ${{ matrix.pipeline }}, scale: \$scale) ---\"" \
-            "  PGPASSWORD=pgbench_pass pgbench -i -s \"\$scale\" -h 127.0.0.1 -p 2345 -U pgbench_user -d pgbench_test" \
-            "done" \
-            "" \
-            "\"\$BUILD_DIR/src/pgagroal-cli\" -c \"\$CONF_DIR/pgagroal.conf\" shutdown || kill -9 \$PGAGROAL_PID 2>/dev/null || true" \
-            "cat \"\$CONF_DIR/pgagroal.log\"" > /tmp/run_pgagroal_freebsd.sh
+          cat << 'SCRIPT_EOF' > /tmp/run_pgagroal_freebsd.sh
+          #!/bin/sh
+          set -e
+          export PATH=/usr/local/bin:$PATH
+
+          GITHUB_WORKSPACE="$1"
+          PIPELINE="$2"
+          BUILD_DIR="$GITHUB_WORKSPACE/build"
+          CONF_DIR="/tmp/pgagroal-freebsd-test"
+
+          mkdir -p "$CONF_DIR"
+          mkdir -m 0700 -p "$HOME/.pgagroal"
+          chmod 0700 "$HOME/.pgagroal"
+
+          run_with_timeout() {
+            _timeout_sec="$1"
+            shift
+            if command -v timeout >/dev/null 2>&1; then
+              timeout "$_timeout_sec" "$@"
+            elif command -v gtimeout >/dev/null 2>&1; then
+              gtimeout "$_timeout_sec" "$@"
+            else
+              python3 -c "import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:], timeout=int('$_timeout_sec')).returncode)" "$@"
+            fi
+          }
+
+          FAILED_COUNT=0
+          FAILED_NAMES=""
+
+          run_pgbench_test() {
+            _desc="$1"
+            _host="$2"
+            _port="$3"
+            _scale="$4"
+            _timeout_sec="$5"
+            _is_pooler="$6"
+
+            echo ""
+            echo "================================================================================"
+            echo ">>> [START] $_desc - Scale $_scale (Host: $_host, Port: $_port, Timeout: ${_timeout_sec}s)"
+            echo "================================================================================"
+
+            _start_time=$(date +%s)
+            set +e
+            run_with_timeout "$_timeout_sec" env PGPASSWORD=pgbench_pass pgbench -i -s "$_scale" -h "$_host" -p "$_port" -U pgbench_user -d pgbench_test
+            _rc=$?
+            set -e
+            _end_time=$(date +%s)
+            _duration=$((_end_time - _start_time))
+
+            if [ $_rc -eq 0 ]; then
+              echo "--------------------------------------------------------------------------------"
+              echo ">>> [PASS] $_desc - Scale $_scale completed in ${_duration}s"
+              echo "--------------------------------------------------------------------------------"
+            elif [ $_rc -eq 124 ]; then
+              echo ""
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              echo ">>> [CRITICAL FAILURE: TIMEOUT] $_desc - Scale $_scale HUNG / TIMED OUT after ${_timeout_sec}s!"
+              echo "    pgbench stalled without completing and was terminated."
+              if [ "$_is_pooler" = "true" ]; then
+                echo "    This indicates an event loop hang in pgagroal kqueue (e.g. EV_CLEAR issue #1067)."
+                echo "    --- pgagroal status ---"
+                "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping || true
+                echo "    --- Recent pgagroal logs ---"
+                tail -n 100 "$CONF_DIR/pgagroal.log" 2>/dev/null || true
+              fi
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              FAILED_NAMES="${FAILED_NAMES}  - [TIMEOUT] $_desc (Scale $_scale after ${_timeout_sec}s)\n"
+            else
+              echo ""
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              echo ">>> [CRITICAL FAILURE: ERROR] $_desc - Scale $_scale FAILED with exit code $_rc in ${_duration}s!"
+              if [ "$_is_pooler" = "true" ]; then
+                echo "    --- pgagroal status ---"
+                "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping || true
+                echo "    --- Recent pgagroal logs ---"
+                tail -n 100 "$CONF_DIR/pgagroal.log" 2>/dev/null || true
+              fi
+              echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+              FAILED_COUNT=$((FAILED_COUNT + 1))
+              FAILED_NAMES="${FAILED_NAMES}  - [FAILED] $_desc (Scale $_scale, Exit Code $_rc)\n"
+            fi
+
+            if [ "$_is_pooler" = "true" ] && [ $_rc -ne 0 ]; then
+              echo ">>> Checking if pgagroal daemon is alive for subsequent tests..."
+              if ! "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping >/dev/null 2>&1; then
+                echo ">>> Restarting pgagroal daemon to allow subsequent tests to run independently..."
+                kill -9 $PGAGROAL_PID 2>/dev/null || true
+                sleep 1
+                rm -f "$CONF_DIR/pgagroal.sock"
+                "$BUILD_DIR/src/pgagroal" -c "$CONF_DIR/pgagroal.conf" -a "$CONF_DIR/pgagroal_hba.conf" -u "$CONF_DIR/pgagroal_users.conf" -l "$CONF_DIR/pgagroal_databases.conf" >> "$CONF_DIR/pgagroal.log" 2>&1 &
+                PGAGROAL_PID=$!
+                for _w in $(seq 1 10); do
+                  if "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping >/dev/null 2>&1; then
+                    echo ">>> pgagroal daemon ready after restart"
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+            fi
+          }
+
+          echo "================================================================================"
+          echo "STEP 1: Direct PostgreSQL initialization tests (Baseline)"
+          echo "================================================================================"
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 1 60 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 10 120 false
+          run_pgbench_test "Direct PostgreSQL" 127.0.0.1 5432 100 300 false
+
+          echo "================================================================================"
+          echo "STEP 2: Configuring and starting pgagroal ($PIPELINE pipeline)"
+          echo "================================================================================"
+          printf "[pgagroal]\nhost = *\nport = 2345\n\nlog_type = console\nlog_level = info\n\nmax_connections = 100\nidle_timeout = 600\nvalidation = off\nunix_socket_dir = %s/\npipeline = %s\nallow_unknown_users = false\n\n[primary]\nhost = 127.0.0.1\nport = 5432\n" "$CONF_DIR" "$PIPELINE" > "$CONF_DIR/pgagroal.conf"
+
+          printf "host all all all trust\n" > "$CONF_DIR/pgagroal_hba.conf"
+          printf "pgbench_test pgbench_user 20 10 2\npostgres pgbench_user 20 10 2\n" > "$CONF_DIR/pgagroal_databases.conf"
+
+          rm -f "$HOME/.pgagroal/master.key" "$CONF_DIR/pgagroal_users.conf"
+          "$BUILD_DIR/src/pgagroal-admin" master-key -P pgbench_pass
+          "$BUILD_DIR/src/pgagroal-admin" -f "$CONF_DIR/pgagroal_users.conf" -U pgbench_user -P pgbench_pass user add
+
+          "$BUILD_DIR/src/pgagroal" -c "$CONF_DIR/pgagroal.conf" -a "$CONF_DIR/pgagroal_hba.conf" -u "$CONF_DIR/pgagroal_users.conf" -l "$CONF_DIR/pgagroal_databases.conf" > "$CONF_DIR/pgagroal.log" 2>&1 &
+          PGAGROAL_PID=$!
+
+          for i in $(seq 1 10); do
+            if "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" ping >/dev/null 2>&1; then
+              echo "pgagroal is ready"
+              break
+            fi
+            if [ "$i" -eq 10 ]; then
+              echo "pgagroal failed to start. Log:"
+              cat "$CONF_DIR/pgagroal.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "================================================================================"
+          echo "STEP 3: Running pgbench through pgagroal pooler ($PIPELINE pipeline)"
+          echo "================================================================================"
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 1 60 true
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 10 120 true
+          run_pgbench_test "pgagroal pooler ($PIPELINE)" 127.0.0.1 2345 100 300 true
+
+          echo "================================================================================"
+          echo "STEP 4: Shutting down pgagroal"
+          echo "================================================================================"
+          "$BUILD_DIR/src/pgagroal-cli" -c "$CONF_DIR/pgagroal.conf" shutdown || kill -9 $PGAGROAL_PID 2>/dev/null || true
+          echo "--- Full pgagroal.log ---"
+          cat "$CONF_DIR/pgagroal.log"
+
+          if [ "$FAILED_COUNT" -ne 0 ]; then
+            echo ""
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            echo ">>> [CRITICAL SUITE FAILURE] $FAILED_COUNT test(s) FAILED:"
+            printf "%b" "$FAILED_NAMES"
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            exit 1
+          fi
+
+          echo ""
+          echo "================================================================================"
+          echo ">>> [SUCCESS] All direct and pgagroal tests passed!"
+          echo "================================================================================"
+          SCRIPT_EOF
 
           chmod +x /tmp/run_pgagroal_freebsd.sh
           chown runner:runner /tmp/run_pgagroal_freebsd.sh
-          su - runner -c "/tmp/run_pgagroal_freebsd.sh"
+          su - runner -c "/tmp/run_pgagroal_freebsd.sh '$GITHUB_WORKSPACE' '${{ matrix.pipeline }}'"
 
 
   build-rpm:
