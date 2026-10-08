@@ -177,6 +177,9 @@ pgagroal_pool_status(void);
 void
 pgagroal_prefill_if_can(bool do_fork, bool initial);
 
+extern int known_fds[MAX_NUMBER_OF_CONNECTIONS];
+extern uint64_t known_transfers[MAX_NUMBER_OF_CONNECTIONS];
+
 #ifdef __cplusplus
 }
 #endif

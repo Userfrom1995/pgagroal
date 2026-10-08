@@ -34,6 +34,7 @@
 #include <message.h>
 #include <network.h>
 #include <pipeline.h>
+#include <pool.h>
 #include <prometheus.h>
 #include <server.h>
 #include <shmem.h>
@@ -145,9 +146,10 @@ session_start(struct event_loop* loop __attribute__((unused)), struct worker_io*
 
    for (int i = 0; i < config->max_connections; i++)
    {
-      if (i != w->slot && !config->connections[i].new && config->connections[i].fd > 0)
+      if (i != w->slot && known_fds[i] > 0)
       {
-         pgagroal_disconnect(config->connections[i].fd);
+         pgagroal_disconnect(known_fds[i]);
+         known_fds[i] = 0;
       }
    }
 

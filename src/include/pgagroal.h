@@ -445,6 +445,7 @@ struct connection
    time_t timestamp;       /**< The last used timestamp */
    pid_t pid;              /**< The associated process id */
    int fd;                 /**< The descriptor */
+   uint64_t transfers;     /**< The transfer generation counter */
 
    size_t tls_context_length;                 /**< Length of the parked backend TLS context, 0 if none */
    char tls_context[TLS_CONTEXT_BUFFER_SIZE]; /**< Serialized backend TLS context for pool resumption */

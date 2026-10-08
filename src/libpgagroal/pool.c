@@ -66,6 +66,9 @@ static char* resolve_database_name(char* database, int best_rule);
 static void check_graceful_shutdown_trigger(void);
 static bool increase_connections(int best_rule);
 
+int known_fds[MAX_NUMBER_OF_CONNECTIONS] = {0};
+uint64_t known_transfers[MAX_NUMBER_OF_CONNECTIONS] = {0};
+
 int
 pgagroal_get_connection(char* username, char* database, bool reuse, bool transaction_mode, int* slot, SSL** ssl)
 {
@@ -119,10 +122,28 @@ start:
    {
       for (int i = 0; *slot == -1 && i < config->max_connections; i++)
       {
+         if (!transaction_mode)
+         {
+            if (known_fds[i] <= 0 ||
+                known_fds[i] != config->connections[i].fd ||
+                known_transfers[i] != config->connections[i].transfers)
+            {
+               continue;
+            }
+         }
+
          free = STATE_FREE;
 
          if (atomic_compare_exchange_strong(&config->states[i], &free, STATE_IN_USE))
          {
+            if (known_fds[i] <= 0 ||
+                known_transfers[i] != config->connections[i].transfers ||
+                (!transaction_mode && known_fds[i] != config->connections[i].fd))
+            {
+               atomic_store(&config->states[i], STATE_FREE);
+               continue;
+            }
+
             bool can_reuse = false;
 
             // Check if same rule and username
@@ -649,11 +670,13 @@ pgagroal_return_connection(int slot, SSL* ssl, bool transaction_mode)
             atomic_fetch_sub(&config->limits[config->connections[slot].limit_rule].active_connections, 1);
          }
 
-         config->connections[slot].new = false;
          config->connections[slot].pid = -1;
          config->connections[slot].tx_mode = transaction_mode;
          memset(&config->connections[slot].appname, 0, sizeof(config->connections[slot].appname));
-         atomic_store(&config->states[slot], STATE_FREE);
+         if (!config->connections[slot].new)
+         {
+            atomic_store(&config->states[slot], STATE_FREE);
+         }
          atomic_fetch_sub(&config->active_connections, 1);
 
          pgagroal_log_debug("Connection returned: slot=%d, active_connections=%d, gracefully=%s",

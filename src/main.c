@@ -133,7 +133,6 @@ static struct accept_io io_management[MAX_FDS];
 static int* management_fds = NULL;
 static int management_fds_length = -1;
 static struct pipeline main_pipeline;
-static int known_fds[MAX_NUMBER_OF_CONNECTIONS];
 static struct client* clients = NULL;
 static struct accept_io io_transfer;
 static struct periodic_watcher idle_timeout_watcher;
@@ -518,6 +517,7 @@ main(int argc, char** argv)
    config = (struct main_configuration*)shmem;
 
    memset(&known_fds, 0, sizeof(known_fds));
+   memset(&known_transfers, 0, sizeof(known_transfers));
    memset(message, 0, MISC_LENGTH);
 
    if (directory_path == NULL)
@@ -2374,7 +2374,11 @@ accept_transfer_cb(struct io_watcher* watcher)
       }
 
       config->connections[slot].fd = fd;
+      config->connections[slot].new = false;
       known_fds[slot] = config->connections[slot].fd;
+      config->connections[slot].transfers++;
+      known_transfers[slot] = config->connections[slot].transfers;
+      atomic_store(&config->states[slot], STATE_FREE);
 
       if (config->pipeline == PIPELINE_TRANSACTION)
       {
@@ -2385,17 +2389,22 @@ accept_transfer_cb(struct io_watcher* watcher)
 
             if (pgagroal_connection_get_pid(c->pid, &c_fd))
             {
-               goto error;
+               c = c->next;
+               continue;
             }
 
             if (pgagroal_connection_id_write(c_fd, CONNECTION_CLIENT_FD))
             {
-               goto error;
+               pgagroal_disconnect(c_fd);
+               c = c->next;
+               continue;
             }
 
             if (pgagroal_connection_transfer_write(c_fd, slot))
             {
-               goto error;
+               pgagroal_disconnect(c_fd);
+               c = c->next;
+               continue;
             }
 
             pgagroal_disconnect(c_fd);
@@ -2430,29 +2439,37 @@ accept_transfer_cb(struct io_watcher* watcher)
 
       if (known_fds[slot] == fd)
       {
-         struct client* c = clients;
-         while (c != NULL)
+         if (config->pipeline == PIPELINE_TRANSACTION)
          {
-            int c_fd = -1;
-
-            if (pgagroal_connection_get_pid(c->pid, &c_fd))
+            struct client* c = clients;
+            while (c != NULL)
             {
-               goto error;
+               int c_fd = -1;
+
+               if (pgagroal_connection_get_pid(c->pid, &c_fd))
+               {
+                  c = c->next;
+                  continue;
+               }
+
+               if (pgagroal_connection_id_write(c_fd, CONNECTION_REMOVE_FD))
+               {
+                  pgagroal_disconnect(c_fd);
+                  c = c->next;
+                  continue;
+               }
+
+               if (pgagroal_connection_transfer_write(c_fd, slot))
+               {
+                  pgagroal_disconnect(c_fd);
+                  c = c->next;
+                  continue;
+               }
+
+               pgagroal_disconnect(c_fd);
+
+               c = c->next;
             }
-
-            if (pgagroal_connection_id_write(c_fd, CONNECTION_REMOVE_FD))
-            {
-               goto error;
-            }
-
-            if (pgagroal_connection_transfer_write(c_fd, slot))
-            {
-               goto error;
-            }
-
-            pgagroal_disconnect(c_fd);
-
-            c = c->next;
          }
 
          pgagroal_disconnect(fd);

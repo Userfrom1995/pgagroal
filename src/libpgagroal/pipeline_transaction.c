@@ -78,6 +78,7 @@ static bool saw_x = false;
 static struct io_watcher io_mgt;
 static struct worker_io server_io;
 static bool io_watcher_active = false;
+static struct worker_io* client_io_ptr = NULL;
 
 struct pipeline
 transaction_pipeline(void)
@@ -108,6 +109,8 @@ transaction_start(struct event_loop* loop, struct worker_io* w)
    bool is_new;
    struct main_configuration* config = NULL;
 
+   client_io_ptr = w;
+
    config = (struct main_configuration*)shmem;
 
    slot = -1;
@@ -131,7 +134,7 @@ transaction_start(struct event_loop* loop, struct worker_io* w)
 
    for (int i = 0; i < config->max_connections; i++)
    {
-      fds[i] = config->connections[i].fd;
+      fds[i] = known_fds[i];
    }
 
    start_mgt(loop);
@@ -164,15 +167,11 @@ transaction_stop(struct event_loop* loop, struct worker_io* w)
 {
    if (slot != -1)
    {
-      struct main_configuration* config = NULL;
-
-      config = (struct main_configuration*)shmem;
-
       /* We are either in 'X' or the client terminated (consider cancel query) */
       if (in_tx)
       {
          /* ROLLBACK */
-         pgagroal_write_rollback(w->server_ssl, config->connections[slot].fd);
+         pgagroal_write_rollback(w->server_ssl, fds[slot]);
       }
 
       if (io_watcher_active)
@@ -184,6 +183,13 @@ transaction_stop(struct event_loop* loop, struct worker_io* w)
       pgagroal_return_connection(slot, w->server_ssl, true);
       slot = -1;
    }
+
+   if (w != NULL)
+   {
+      w->slot = -1;
+   }
+   server_io.slot = -1;
+   client_io_ptr = NULL;
 
    shutdown_mgt(loop);
 }
@@ -228,10 +234,10 @@ transaction_client(struct io_watcher* watcher)
 
       memcpy(&config->connections[slot].appname[0], &appname[0], MAX_APPLICATION_NAME);
 
-      pgagroal_event_worker_init(&server_io.io, config->connections[slot].fd,
+      pgagroal_event_worker_init(&server_io.io, fds[slot],
                                  wi->client_fd, transaction_server);
       server_io.client_fd = wi->client_fd;
-      server_io.server_fd = config->connections[slot].fd;
+      server_io.server_fd = fds[slot];
       server_io.slot = slot;
       server_io.client_ssl = wi->client_ssl;
       server_io.server_ssl = wi->server_ssl;
@@ -530,6 +536,11 @@ transaction_server(struct io_watcher* watcher)
             }
 
             slot = -1;
+            server_io.slot = -1;
+            if (client_io_ptr != NULL)
+            {
+               client_io_ptr->slot = -1;
+            }
          }
          else
          {
@@ -632,9 +643,8 @@ accept_cb(struct io_watcher* watcher)
    int id = -1;
    int32_t slot = -1;
    int fd = -1;
-   struct main_configuration* config = NULL;
 
-   config = (struct main_configuration*)shmem;
+   struct main_configuration* config = (struct main_configuration*)shmem;
 
    client_fd = watcher->fds.main.client_fd;
    if (client_fd == -1)
@@ -660,6 +670,8 @@ accept_cb(struct io_watcher* watcher)
       }
 
       fds[slot] = fd;
+      known_fds[slot] = fd;
+      known_transfers[slot] = config->connections[slot].transfers;
    }
    else if (id == CONNECTION_REMOVE_FD)
    {
@@ -669,10 +681,19 @@ accept_cb(struct io_watcher* watcher)
          goto done;
       }
 
-      if (fds[slot] == fd && !config->connections[slot].new && config->connections[slot].fd > 0)
+      if (fd >= 0)
       {
          pgagroal_disconnect(fd);
-         fds[slot] = 0;
+      }
+
+      if (slot >= 0 && slot < MAX_NUMBER_OF_CONNECTIONS)
+      {
+         if (fds[slot] > 0)
+         {
+            pgagroal_disconnect(fds[slot]);
+            fds[slot] = 0;
+         }
+         known_fds[slot] = 0;
       }
    }
    else
