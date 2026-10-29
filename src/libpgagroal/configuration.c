@@ -1285,6 +1285,7 @@ pgagroal_read_hba_configuration(void* shm, char* filename)
          if (pgagroal_apply_hba_configuration(&config->hbas[index], PGAGROAL_HBA_ENTRY_TYPE, type) == 0 && pgagroal_apply_hba_configuration(&config->hbas[index], PGAGROAL_HBA_ENTRY_DATABASE, database) == 0 && pgagroal_apply_hba_configuration(&config->hbas[index], PGAGROAL_HBA_ENTRY_USERNAME, username) == 0 && pgagroal_apply_hba_configuration(&config->hbas[index], PGAGROAL_HBA_ENTRY_ADDRESS, address) == 0 && pgagroal_apply_hba_configuration(&config->hbas[index], PGAGROAL_HBA_ENTRY_METHOD, method) == 0)
          {
             // ok, this configuration has been applied
+            config->hbas[index].lineno = lineno;
             index++;
 
             if (index >= NUMBER_OF_HBAS)
