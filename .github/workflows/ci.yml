@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - 2.0.x
+      - ci-iouring-stop-rearm
   pull_request:
     branches:
       - master
